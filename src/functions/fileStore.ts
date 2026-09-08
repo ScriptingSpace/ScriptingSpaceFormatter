@@ -40,6 +40,9 @@ export type FormatterFileContext = {
     openFile: (file: FormatterFile) => void;
     // Sidebar click: make this file the active one
     selectFile: (name: string) => void;
+    // Sidebar background click (not on any entry): clear the selection so no
+    // file is active and the content pane falls back to its placeholder
+    deselectFiles: () => void;
     // Update one open file's content (future formatter output target)
     updateContent: (name: string, content: string) => void;
     // Sidebar close (×): remove the file; if it was active, select the latest
@@ -61,6 +64,7 @@ export const {
     activeFileId: null,
     openFile: () => {},
     selectFile: () => {},
+    deselectFiles: () => {},
     updateContent: () => {},
     closeFile: () => {},
     moveFile: () => {},
