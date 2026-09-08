@@ -1,7 +1,7 @@
 import React from 'react';
 import { arrayEach } from '@presource/core';
 import { styledComponent, useStateHook } from '@presource/react';
-import { formatterFileStore, FormatterFileProvider, readTextFile } from '../functions';
+import { formatterFileStore, FormatterFileProvider, readTextFile, downloadFilesPdf } from '../functions';
 import type { FormatterFile } from '../functions';
 import { ConnectedFileSidebar } from '../components';
 
@@ -24,8 +24,14 @@ const DashboardRoot = styledComponent('div', {
 });
 
 // Header bar — modest breathing room (12px vertical / 16px horizontal);
-// content stays edge-aligned (no maxWidth centering)
+// content stays edge-aligned (no maxWidth centering). Laid out as a row:
+// title block on the LEFT, the Export PDF action button on the RIGHT.
 const HeaderBar = styledComponent('header', {
+    display: 'flex',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 16,
     padding: '12px 16px',
     background: '#0b1120',
     borderBottom: '1px solid #1e293b',
@@ -50,6 +56,30 @@ const HeaderSubtitle = styledComponent('p', {
     fontSize: 13,
     color: '#94a3b8',
 });
+
+// RIGHT side of the header — triggers the pdf-lib export of every sidebar
+// file into one downloaded PDF (functions/exportFilesToPdf.ts). Disabled
+// state is prop-driven: the function value receives all non-theme props,
+// including the standard `disabled` button attribute (cross-reference:
+// presource/react styled-component.tsx phase 2 — function values are called
+// with `rest`, which contains HTML attributes).
+const ExportPdfButton = styledComponent<{ disabled: boolean }>(
+    'button',
+    {
+        padding: '8px 14px',
+        fontSize: 13,
+        fontWeight: 600,
+        fontFamily: 'inherit',
+        borderRadius: 8,
+        border: '1px solid #3b82f6',
+        background: ({ disabled }) => (disabled ? '#16233b' : '#2563eb'),
+        color: ({ disabled }) => (disabled ? '#64748b' : '#ffffff'),
+        cursor: ({ disabled }) => (disabled ? 'not-allowed' : 'pointer'),
+        flexShrink: 0,
+    },
+// Cast matches the FileSidebar EntryClose pattern — the element only needs
+// standard button attributes (type/onClick/disabled/data-testid)
+) as unknown as React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>>;
 
 // Content region between header and footer. It is a non-scrolling frame
 // split into two columns: the LEFT column is the file sidebar, the RIGHT
@@ -188,6 +218,25 @@ export const FormatterDashboard = React.memo(() => {
                 activeFileId(remaining.length ? remaining[remaining.length - 1].name : null);
             }
         },
+        // Sidebar drag & drop reorder: remove the `from` entry and INSERT it
+        // at `toIndex`. The index is measured against the ORIGINAL list, so
+        // once the dragged entry is spliced out, positions after it shift
+        // down by one — compensated when fromIndex < toIndex. Guarded no-ops:
+        // unknown names / out-of-range indexes / unchanged order never write
+        // state. The active selection is name-based, so reordering never
+        // changes which file is active.
+        moveFile: (fromName: string, toIndex: number) => {
+            const current = files();
+            const fromIndex = current.findIndex((entry) => entry.name === fromName);
+            if (fromIndex === -1 || toIndex < 0 || toIndex > current.length) return;
+            const reordered = [...current];
+            // Remove the dragged entry first — splice re-indexes the rest
+            const [moved] = reordered.splice(fromIndex, 1);
+            reordered.splice(fromIndex < toIndex ? toIndex - 1 : toIndex, 0, moved);
+            // Skip the state write entirely when the order is unchanged
+            if (reordered.every((entry, index) => entry.name === current[index].name)) return;
+            files(reordered);
+        },
     };
 
     return (
@@ -204,6 +253,10 @@ const DashboardShell = () => {
     // Capture the shared store during render — calling the accessor inside an
     // event handler would be an invalid hook call
     const store = formatterFileStore();
+
+    // True while the pdf-lib export is running — guards against double clicks
+    // and swaps the button label to an in-progress state
+    const exporting = useStateHook(false);
 
     // Resolve the active file for content rendering. Content renders ONLY
     // when exactly one file is selected (the current single-select model):
@@ -236,6 +289,16 @@ const DashboardShell = () => {
         event.stopPropagation();
     };
 
+    // RIGHT header button: converts every sidebar file into ONE PDF (in drop
+    // order) and triggers the browser download automatically. No-op while an
+    // export is already running or when the sidebar is empty (button is also
+    // visually disabled in that case).
+    const handleExportPdf = () => {
+        if (exporting() || store.files.length === 0) return;
+        exporting(true);
+        downloadFilesPdf(store.files).finally(() => exporting(false));
+    };
+
     return (
         <DashboardRoot
             onDrop={handleDrop}
@@ -249,6 +312,16 @@ const DashboardShell = () => {
                         Drop files anywhere — they are collected in the sidebar.
                     </HeaderSubtitle>
                 </HeaderInner>
+                {/* Right-aligned action: merges all sidebar files into a
+                    single downloaded PDF via pdf-lib */}
+                <ExportPdfButton
+                    type="button"
+                    onClick={handleExportPdf}
+                    disabled={store.files.length === 0 || exporting()}
+                    data-testid="export-pdf-button"
+                >
+                    {exporting() ? 'Exporting…' : 'Export PDF'}
+                </ExportPdfButton>
             </HeaderBar>
             {/* Content area: LEFT column is the file sidebar, RIGHT pane
                 renders the selected file's content (placeholder when nothing

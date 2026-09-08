@@ -405,4 +405,125 @@ describe('FormatterDashboard', () => {
             );
         });
     });
+
+    it('disables the Export PDF button while the sidebar is empty', () => {
+        render(<FormatterDashboard />);
+
+        const button = screen.getByTestId('export-pdf-button') as HTMLButtonElement;
+        // No files yet → nothing to convert, button is disabled and shows the
+        // idle label on the right side of the header
+        expect(button.disabled).toBe(true);
+        expect(button.textContent).toBe('Export PDF');
+    });
+
+    it('converts all sidebar files into one automatically downloaded PDF on click', async () => {
+        // jsdom has no object URL implementation — stub the URL lifecycle and
+        // capture the synthetic anchor click that triggers the download
+        URL.createObjectURL = vi.fn(() => 'blob:mock-pdf-url');
+        URL.revokeObjectURL = vi.fn();
+        const clicked: HTMLAnchorElement[] = [];
+        vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+            this: HTMLAnchorElement,
+        ) {
+            clicked.push(this);
+        });
+
+        render(<FormatterDashboard />);
+
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [
+                    new File(['alpha'], 'alpha.txt', { type: 'text/plain' }),
+                    new File(['beta'], 'beta.txt', { type: 'text/plain' }),
+                ],
+            },
+        });
+        await waitFor(() => {
+            expect(screen.getByTestId('sidebar-file-beta.txt')).toBeDefined();
+        });
+
+        // Enabled once at least one file is loaded
+        const button = screen.getByTestId('export-pdf-button') as HTMLButtonElement;
+        expect(button.disabled).toBe(false);
+
+        fireEvent.click(button);
+
+        // The export builds one PDF from BOTH files and auto-downloads it
+        await waitFor(() => {
+            expect(clicked).toHaveLength(1);
+        });
+        expect(clicked[0].download).toBe('formatter-export.pdf');
+        expect(clicked[0].href).toBe('blob:mock-pdf-url');
+        const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob;
+        expect(blob.type).toBe('application/pdf');
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-pdf-url');
+
+        // After the async export completes, the button returns to idle
+        await waitFor(() => {
+            expect((screen.getByTestId('export-pdf-button') as HTMLButtonElement).textContent).toBe(
+                'Export PDF',
+            );
+        });
+    });
+
+    // Minimal dataTransfer stub — jsdom does not implement DataTransfer
+    const makeDataTransfer = () => ({
+        setData: () => {},
+        getData: () => '',
+        effectAllowed: 'all',
+        dropEffect: 'none',
+    });
+
+    // jsdom has no DragEvent — testing-library's fireEvent.dragOver falls
+    // back to a plain Event and drops clientY. Dispatch a raw dragover with
+    // clientY injected (10 → bottom half of the zero-sized jsdom rect).
+    const fireDragOver = (target: HTMLElement, clientY: number) => {
+        const event = new Event('dragover', { bubbles: true, cancelable: true });
+        Object.defineProperty(event, 'clientY', { value: clientY });
+        Object.defineProperty(event, 'dataTransfer', { value: makeDataTransfer() });
+        fireEvent(target, event);
+    };
+
+    it('re-orders sidebar entries by dragging one onto another, keeping the selection', async () => {
+        render(<FormatterDashboard />);
+
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [
+                    new File(['alpha'], 'alpha.txt', { type: 'text/plain' }),
+                    new File(['beta'], 'beta.txt', { type: 'text/plain' }),
+                    new File(['gamma'], 'gamma.txt', { type: 'text/plain' }),
+                ],
+            },
+        });
+        await waitFor(() => {
+            expect(screen.getByTestId('sidebar-file-gamma.txt')).toBeDefined();
+        });
+
+        // Drag alpha (first entry) onto the BOTTOM half of gamma (last entry)
+        // → insertion slot after gamma (index 3)
+        fireEvent.dragStart(screen.getByTestId('sidebar-file-alpha.txt'), {
+            dataTransfer: makeDataTransfer(),
+        });
+        fireDragOver(screen.getByTestId('sidebar-file-gamma.txt'), 10);
+        expect(screen.getByTestId('drop-line')).toBeDefined();
+        fireEvent.drop(screen.getByTestId('sidebar-file-gamma.txt'), {
+            dataTransfer: makeDataTransfer(),
+        });
+
+        // Order is now beta, gamma, alpha
+        await waitFor(() => {
+            const entries = screen.getAllByTestId(/^sidebar-file-/);
+            expect(entries.map((entry) => entry.getAttribute('data-testid'))).toEqual([
+                'sidebar-file-beta.txt',
+                'sidebar-file-gamma.txt',
+                'sidebar-file-alpha.txt',
+            ]);
+        });
+
+        // Reordering is selection-neutral: gamma (last drop) stays active
+        expect(screen.getByTestId('sidebar-file-gamma.txt').getAttribute('aria-pressed')).toBe(
+            'true',
+        );
+    });
 });

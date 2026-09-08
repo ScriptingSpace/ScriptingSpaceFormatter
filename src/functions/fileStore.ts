@@ -41,6 +41,11 @@ export type FormatterFileContext = {
     updateContent: (name: string, content: string) => void;
     // Sidebar close (×): remove the file; if it was active, select the latest
     closeFile: (name: string) => void;
+    // Sidebar drag & drop reordering: INSERT the `fromName` entry at
+    // `toIndex` (0..files.length, measured against the list BEFORE the
+    // move). No-op when the name is unknown, the index is out of range, or
+    // the insertion would not change the order.
+    moveFile: (fromName: string, toIndex: number) => void;
 };
 
 // Cross-reference: FormatterDashboard.tsx wraps the tree in the provider and
@@ -55,4 +60,5 @@ export const {
     selectFile: () => {},
     updateContent: () => {},
     closeFile: () => {},
+    moveFile: () => {},
 });

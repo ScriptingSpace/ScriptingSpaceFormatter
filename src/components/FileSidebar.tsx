@@ -1,5 +1,5 @@
 import React from 'react';
-import { styledComponent } from '@presource/react';
+import { styledComponent, useStateHook } from '@presource/react';
 import { formatterFileStore } from '../functions';
 import type { FormatterFile } from '../functions';
 
@@ -51,9 +51,26 @@ const EmptyHint = styledComponent('div', {
     color: '#475569',
 });
 
+// Insertion indicator — a 2px accent line rendered BETWEEN two entries at
+// the exact position where the dragged entry would land. A line (not an
+// outline) is used because dropping INSERTS the entry at that slot; an
+// outline on the hovered entry would wrongly suggest a "replace" semantic.
+const DropLine = styledComponent('div', {
+    height: 2,
+    flexShrink: 0,
+    borderRadius: 1,
+    background: '#3b82f6',
+    margin: '0 4px',
+});
+
 // One entry per accepted file. The active entry gets the raised background +
-// bright text; the rest stay muted and clickable.
-const FileEntry = styledComponent<{ active: boolean }>(
+// bright text; the rest stay muted and clickable. Every entry is draggable:
+// dragging one between others shows the DropLine insertion indicator and
+// dropping reorders the list. `dragging` dims the entry in flight.
+const FileEntry = styledComponent<{
+    active: boolean;
+    dragging: boolean;
+}>(
     'div',
     {
         display: 'flex',
@@ -70,11 +87,17 @@ const FileEntry = styledComponent<{ active: boolean }>(
         userSelect: 'none' as const,
         transition: 'background 150ms ease, color 150ms ease',
         minWidth: 0,
+        // Dimmed while its own drag is in flight — a subtle "this one moves" cue
+        opacity: ({ dragging }) => (dragging ? 0.4 : 1),
     },
-// The entry element only needs the active style prop plus passthrough HTML
+// The entry element only needs the style props plus passthrough HTML
 // attributes (children are rendered via FileName/EntryClose)
 ) as unknown as React.FC<
-    { active: boolean; children: React.ReactNode } & React.HTMLAttributes<HTMLDivElement>
+    {
+        active: boolean;
+        dragging: boolean;
+        children: React.ReactNode;
+    } & React.HTMLAttributes<HTMLDivElement>
 >;
 
 // Truncates long file names with an ellipsis so the close button never gets
@@ -113,13 +136,33 @@ export type FileSidebarProps = {
     onSelect: (name: string) => void;
     // Fired when an entry's × is clicked — removes that file from the sidebar
     onClose: (name: string) => void;
+    // Fired when a dragged entry is dropped between others — reorders the
+    // list so the dragged entry is INSERTED at `toIndex` (0..files.length,
+    // measured against the list BEFORE the move)
+    onMove: (fromName: string, toIndex: number) => void;
 };
 
 // Sidebar listing every file accepted by the dashboard. Files enter ONLY by
 // dropping them onto the page (the dashboard's global drop handler reads them
 // via readTextFile → openFile). Clicking an entry selects it — the dashboard
 // then renders that file's content in the pane to the sidebar's right.
-export const FileSidebar = ({ files, activeFileId, onSelect, onClose }: FileSidebarProps) => {
+// Entries can also be dragged BETWEEN each other to re-order the list: the
+// pointer's position relative to the hovered entry's vertical midpoint picks
+// the insertion slot, a DropLine marks it between the two entries, and
+// dropping fires onMove(fromName, toIndex).
+export const FileSidebar = ({ files, activeFileId, onSelect, onClose, onMove }: FileSidebarProps) => {
+    // HTML5 drag state — the entry being dragged (a file name) and the
+    // insertion index (0..files.length) where the DropLine currently sits.
+    // insertAt is null when no valid drop position is hovered.
+    const dragName = useStateHook<string | null>(null);
+    const insertAt = useStateHook<number | null>(null);
+
+    // Resets both drag trackers — shared by drop and dragend
+    const endDrag = () => {
+        dragName(null);
+        insertAt(null);
+    };
+
     const handleKeyDown = (name: string) => (event: React.KeyboardEvent<HTMLDivElement>) => {
         // Enter and Space both select the entry when keyboard-focused
         if (event.key === 'Enter' || event.key === ' ') {
@@ -128,44 +171,101 @@ export const FileSidebar = ({ files, activeFileId, onSelect, onClose }: FileSide
         }
     };
 
+    // Per-entry HTML5 drag handlers. dataTransfer.setData is required for
+    // Firefox to initiate a drag; the move effect signals reordering intent.
+    const dragHandlers = (name: string, index: number) => ({
+        draggable: true,
+        onDragStart: (event: React.DragEvent<HTMLDivElement>) => {
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', name);
+            dragName(name);
+        },
+        onDragOver: (event: React.DragEvent<HTMLDivElement>) => {
+            if (!dragName()) return;
+            // preventDefault is required or the browser cancels the drop
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            // Insert-above vs insert-below is decided by the pointer's
+            // position relative to the entry's vertical midpoint (jsdom
+            // rects are zero-sized → tests pass explicit clientY values)
+            const rect = event.currentTarget.getBoundingClientRect();
+            const before = event.clientY < rect.top + rect.height / 2;
+            const target = before ? index : index + 1;
+            // Suppress the line when the insertion would not change the
+            // order — dropping immediately before/after itself is a no-op
+            const fromIndex = files.findIndex((entry) => entry.name === dragName());
+            insertAt(target === fromIndex || target === fromIndex + 1 ? null : target);
+        },
+        onDrop: (event: React.DragEvent<HTMLDivElement>) => {
+            event.preventDefault();
+            event.stopPropagation();
+            // Guard against dropped foreign payloads: only accept a drop
+            // whose drag started on one of OUR entries (dragName set) AND
+            // has a valid insertion slot (insertAt not null)
+            const from = dragName();
+            const at = insertAt();
+            if (from && at !== null) onMove(from, at);
+            endDrag();
+        },
+        onDragEnd: endDrag,
+    });
+
+    // List-level dragleave: clears the DropLine when the pointer truly
+    // exits the list. Leave events bubble from child entries mid-traversal,
+    // so only clear when the related target is outside the list (jsdom
+    // provides no relatedTarget → null → clears, which tests rely on).
+    const handleListDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+        const next = event.relatedTarget as Node | null;
+        if (!next || !event.currentTarget.contains(next)) insertAt(null);
+    };
+
     return (
         <SidebarRoot data-testid="file-sidebar">
             <SidebarHeader>
                 Files{files.length > 0 ? ` (${files.length})` : ''}
             </SidebarHeader>
-            <FileList data-testid="file-list">
+            <FileList data-testid="file-list" onDragLeave={handleListDragLeave}>
                 {files.length === 0 ? (
                     <EmptyHint data-testid="file-list-empty">
                         No files yet — drop files anywhere on the page to add them here.
                     </EmptyHint>
                 ) : (
-                    files.map((entry) => (
-                        <FileEntry
-                            key={entry.name}
-                            active={entry.name === activeFileId}
-                            onClick={() => onSelect(entry.name)}
-                            onKeyDown={handleKeyDown(entry.name)}
-                            role="button"
-                            tabIndex={0}
-                            aria-pressed={entry.name === activeFileId}
-                            data-testid={`sidebar-file-${entry.name}`}
-                        >
-                            <FileName>{entry.name}</FileName>
-                            <EntryClose
-                                type="button"
-                                aria-label={`Remove ${entry.name}`}
-                                // Stop propagation so removing a file doesn't
-                                // also select it
-                                onClick={(event) => {
-                                    event.stopPropagation();
-                                    onClose(entry.name);
-                                }}
-                                data-testid={`remove-file-${entry.name}`}
-                            >
-                                ×
-                            </EntryClose>
-                        </FileEntry>
-                    ))
+                    <>
+                        {files.map((entry, index) => (
+                            <React.Fragment key={entry.name}>
+                                {/* Insertion line BEFORE this entry (index slot) */}
+                                {insertAt() === index && <DropLine data-testid="drop-line" />}
+                                <FileEntry
+                                    active={entry.name === activeFileId}
+                                    dragging={dragName() === entry.name}
+                                    onClick={() => onSelect(entry.name)}
+                                    onKeyDown={handleKeyDown(entry.name)}
+                                    role="button"
+                                    tabIndex={0}
+                                    aria-pressed={entry.name === activeFileId}
+                                    data-testid={`sidebar-file-${entry.name}`}
+                                    {...dragHandlers(entry.name, index)}
+                                >
+                                    <FileName>{entry.name}</FileName>
+                                    <EntryClose
+                                        type="button"
+                                        aria-label={`Remove ${entry.name}`}
+                                        // Stop propagation so removing a file doesn't
+                                        // also select it
+                                        onClick={(event) => {
+                                            event.stopPropagation();
+                                            onClose(entry.name);
+                                        }}
+                                        data-testid={`remove-file-${entry.name}`}
+                                    >
+                                        ×
+                                    </EntryClose>
+                                </FileEntry>
+                            </React.Fragment>
+                        ))}
+                        {/* Insertion line AFTER the last entry (index == length) */}
+                        {insertAt() === files.length && <DropLine data-testid="drop-line" />}
+                    </>
                 )}
             </FileList>
         </SidebarRoot>
@@ -185,6 +285,7 @@ export const ConnectedFileSidebar = () => {
             activeFileId={store.activeFileId}
             onSelect={store.selectFile}
             onClose={store.closeFile}
+            onMove={store.moveFile}
         />
     );
 };
