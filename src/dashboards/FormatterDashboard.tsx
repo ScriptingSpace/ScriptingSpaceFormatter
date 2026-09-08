@@ -23,15 +23,16 @@ const DashboardRoot = styledComponent('div', {
     overflow: 'hidden' as const,
 });
 
+// Header bar — modest breathing room (12px vertical / 16px horizontal);
+// content stays edge-aligned (no maxWidth centering)
 const HeaderBar = styledComponent('header', {
-    padding: '20px 16px',
+    padding: '12px 16px',
     background: '#0b1120',
     borderBottom: '1px solid #1e293b',
 });
 
+// Full-width header content
 const HeaderInner = styledComponent('div', {
-    maxWidth: 1200,
-    margin: '0 auto',
     display: 'flex',
     flexDirection: 'column',
     gap: 4,
@@ -50,22 +51,22 @@ const HeaderSubtitle = styledComponent('p', {
     color: '#94a3b8',
 });
 
-// Content region between header and footer. It is a positioned, non-scrolling
-// frame split into two columns: the LEFT pane is reserved for formatter
-// output (intentionally empty for now), the RIGHT column is the file sidebar.
-// The dashed drop outline is absolutely positioned inside this area.
+// Content region between header and footer. It is a non-scrolling frame
+// split into two columns: the LEFT column is the file sidebar, the RIGHT
+// pane renders the selected file's content (placeholder when nothing is
+// selected).
 const ContentArea = styledComponent('div', {
     flex: 1,
     minHeight: 0,
-    position: 'relative' as const,
     width: '100%',
     display: 'flex',
     flexDirection: 'row',
     overflow: 'hidden' as const,
 });
 
-// LEFT pane — reserved for the formatter content. Deliberately left empty
-// (placeholder only); future formatting features will render here.
+// RIGHT pane — renders the selected file's content (or the placeholder when
+// nothing is selected). alignItems/justifyContent only affect the centered
+// placeholder; the content view itself fills the full pane.
 const ContentPane = styledComponent('div', {
     flex: 1,
     minWidth: 0,
@@ -73,6 +74,7 @@ const ContentPane = styledComponent('div', {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden' as const,
 });
 
 const ContentPlaceholder = styledComponent('div', {
@@ -82,41 +84,62 @@ const ContentPlaceholder = styledComponent('div', {
     padding: 32,
 });
 
-// Dashed drop outline covering ONLY the content area (absolute inside
-// ContentArea — not the viewport), inset 12px so it floats with breathing
-// room from the header/footer borders and window edges. Only shown while NO
-// file has been accepted yet. It intensifies (accent border + scrim + label)
-// while a drag is in progress. pointerEvents: none keeps the UI underneath
-// fully clickable.
-const DropOutline = styledComponent<{ active: boolean }>('div', {
-    position: 'absolute',
-    top: 12,
-    left: 12,
-    right: 12,
-    bottom: 12,
-    zIndex: 10,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    border: ({ active }) => `3px dashed ${active ? '#38bdf8' : '#24344d'}`,
-    background: ({ active }) => (active ? 'rgba(15, 23, 42, 0.75)' : 'transparent'),
-    fontSize: 20,
-    fontWeight: 600,
-    color: '#7dd3fc',
-    pointerEvents: 'none' as const,
-    transition: 'border-color 150ms ease, background 150ms ease',
+// Scrollable monospace view for a selected text file's raw content. Fills
+// the whole content pane (the pane itself never scrolls — this element does).
+const TextView = styledComponent('pre', {
+    margin: 0,
+    padding: 16,
+    width: '100%',
+    height: '100%',
+    boxSizing: 'border-box' as const,
+    overflow: 'auto' as const,
+    textAlign: 'left' as const,
+    fontSize: 13,
+    lineHeight: 1.6,
+    fontFamily: '"Cascadia Code", Consolas, "Courier New", monospace',
+    color: '#e2e8f0',
+    whiteSpace: 'pre-wrap' as const,
+    wordBreak: 'break-word' as const,
 });
 
-// Footer bar — third page area (header / content / footer)
+// Image preview — the image fits INSIDE the pane (never overflows or
+// distorts): max 100% of both axes, object-fit: contain keeps aspect ratio.
+// Centered by the pane's align/justify. Needs explicit casting for ref-less
+// img attributes typing (styledComponent returns React.FC).
+const ImageView = styledComponent('img', {
+    maxWidth: '100%',
+    maxHeight: '100%',
+    objectFit: 'contain' as const,
+    display: 'block',
+}) as unknown as React.FC<React.ImgHTMLAttributes<HTMLImageElement>>;
+
+// Video preview — native player with controls, same fit-inside rules as the
+// image view so long/large videos never overflow the pane.
+const VideoView = styledComponent('video', {
+    maxWidth: '100%',
+    maxHeight: '100%',
+    display: 'block',
+}) as unknown as React.FC<React.VideoHTMLAttributes<HTMLVideoElement>>;
+
+// Binary notice — shown when the selected file's kind is 'binary' (its raw
+// content is never rendered; it stays in the session for future features).
+const BinaryNotice = styledComponent('div', {
+    fontSize: 14,
+    color: '#475569',
+    textAlign: 'center' as const,
+    padding: 32,
+});
+
+// Footer bar — modest breathing room (8px vertical / 16px horizontal) to
+// match the header; content stays edge-aligned
 const FooterBar = styledComponent('footer', {
-    padding: '10px 16px',
+    padding: '8px 16px',
     background: '#0b1120',
     borderTop: '1px solid #1e293b',
 });
 
+// Full-width footer content
 const FooterInner = styledComponent('div', {
-    maxWidth: 1200,
-    margin: '0 auto',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -174,21 +197,27 @@ export const FormatterDashboard = React.memo(() => {
     );
 });
 
-// Shell: renders header + (left content pane / right file sidebar) + footer,
+// Shell: renders header + (left file sidebar / right content pane) + footer,
 // and handles drag & drop anywhere on the screen (handlers live on the
 // full-viewport root element).
 const DashboardShell = () => {
-    // Local visual state — kept here (below the provider) so drag hover
-    // doesn't churn the shared file context
-    const dragOver = useStateHook(false);
     // Capture the shared store during render — calling the accessor inside an
     // event handler would be an invalid hook call
     const store = formatterFileStore();
 
+    // Resolve the active file for content rendering. Content renders ONLY
+    // when exactly one file is selected (the current single-select model):
+    // activeFileId must match exactly one entry. Multi-select rendering is a
+    // deliberately different feature — not implemented here.
+    const { files, activeFileId } = store;
+    const activeFile =
+        activeFileId && files.filter((entry) => entry.name === activeFileId).length === 1
+            ? (files.find((entry) => entry.name === activeFileId) ?? null)
+            : null;
+
     const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
         event.preventDefault();
         event.stopPropagation();
-        dragOver(false);
         // Accept EVERY dropped file, not just the first — each becomes its own
         // sidebar entry. Promise.all keeps the read order deterministic so the
         // last file in the drop ends up as the active entry.
@@ -199,25 +228,18 @@ const DashboardShell = () => {
         });
     };
 
+    // preventDefault on dragover is REQUIRED — without it the browser
+    // cancels the drag and the drop event never fires. No visual feedback
+    // (no outline): the drop simply adds files to the sidebar.
     const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
         event.preventDefault();
         event.stopPropagation();
-        dragOver(true);
-    };
-
-    // relatedTarget guard: ignore dragleave events fired when moving between
-    // the root's own children (prevents overlay flicker)
-    const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
-        const related = event.relatedTarget as HTMLElement | null;
-        if (related && event.currentTarget.contains(related)) return;
-        dragOver(false);
     };
 
     return (
         <DashboardRoot
             onDrop={handleDrop}
             onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
             data-testid="dashboard-root"
         >
             <HeaderBar>
@@ -228,26 +250,44 @@ const DashboardShell = () => {
                     </HeaderSubtitle>
                 </HeaderInner>
             </HeaderBar>
-            {/* Content area: LEFT pane reserved for formatter output
-                (placeholder for now), RIGHT column is the file sidebar. The
-                dashed outline lives INSIDE here (absolute); the page itself
-                never scrolls. */}
-            <ContentArea>
-                <ContentPane data-testid="content-pane">
-                    <ContentPlaceholder data-testid="content-placeholder">
-                        Formatter content will appear here.
-                    </ContentPlaceholder>
-                </ContentPane>
+            {/* Content area: LEFT column is the file sidebar, RIGHT pane
+                renders the selected file's content (placeholder when nothing
+                is selected). The page itself never scrolls. */}
+            <ContentArea data-testid="content-area">
                 <ConnectedFileSidebar />
-                {/* The dashed outline is the empty-state drop affordance: it
-                    only shows while NO file has been accepted. Once files are
-                    in the sidebar the outline disappears (dropping more files
-                    still works — the root handles it). */}
-                {store.files.length === 0 ? (
-                    <DropOutline active={dragOver()} data-testid="drop-outline">
-                        {dragOver() ? 'Drop to add files' : null}
-                    </DropOutline>
-                ) : null}
+                <ContentPane data-testid="content-pane">
+                    {/* Single active file → render by its detected kind:
+                        image → <img>, video → <video> player, text → text
+                        view, binary → notice (raw content never rendered).
+                        Nothing selected → placeholder. */}
+                    {activeFile ? (
+                        activeFile.kind === 'image' ? (
+                            <ImageView
+                                data-testid="file-content-image"
+                                src={activeFile.content}
+                                alt={activeFile.name}
+                            />
+                        ) : activeFile.kind === 'video' ? (
+                            <VideoView
+                                data-testid="file-content-video"
+                                src={activeFile.content}
+                                controls
+                            />
+                        ) : activeFile.kind === 'text' ? (
+                            <TextView data-testid="file-content-text">
+                                {activeFile.content}
+                            </TextView>
+                        ) : (
+                            <BinaryNotice data-testid="file-content-binary">
+                                {activeFile.name} is a binary file — preview is not available.
+                            </BinaryNotice>
+                        )
+                    ) : (
+                        <ContentPlaceholder data-testid="content-placeholder">
+                            Formatter content will appear here.
+                        </ContentPlaceholder>
+                    )}
+                </ContentPane>
             </ContentArea>
             <FooterBar data-testid="dashboard-footer">
                 <FooterInner>

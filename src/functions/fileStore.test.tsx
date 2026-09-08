@@ -11,11 +11,13 @@ afterEach(() => {
 });
 
 describe('readTextFile', () => {
-    it('resolves with the file name and plain text content', async () => {
+    it('resolves text files with name, kind, mime and plain text content', async () => {
         const file = new File(['hello formatter'], 'notes.txt', { type: 'text/plain' });
 
         await expect(readTextFile(file)).resolves.toEqual({
             name: 'notes.txt',
+            kind: 'text',
+            mime: 'text/plain',
             content: 'hello formatter',
         });
     });
@@ -27,8 +29,57 @@ describe('readTextFile', () => {
 
         await expect(readTextFile(file)).resolves.toEqual({
             name: 'multi.txt',
+            kind: 'text',
+            mime: 'text/plain',
             content: 'line one\nline two\n\nline four',
         });
+    });
+
+    it('classifies image files as kind image and reads them as data URLs', async () => {
+        const file = new File(['fake-png-bytes'], 'logo.png', { type: 'image/png' });
+
+        const result = await readTextFile(file);
+        expect(result.name).toBe('logo.png');
+        expect(result.kind).toBe('image');
+        expect(result.mime).toBe('image/png');
+        // data: URLs are prefixed with the MIME type and base64 marker
+        expect(result.content.startsWith('data:image/png;base64,')).toBe(true);
+    });
+
+    it('classifies video files as kind video and reads them as data URLs', async () => {
+        const file = new File(['fake-mp4-bytes'], 'clip.mp4', { type: 'video/mp4' });
+
+        const result = await readTextFile(file);
+        expect(result.name).toBe('clip.mp4');
+        expect(result.kind).toBe('video');
+        expect(result.mime).toBe('video/mp4');
+        expect(result.content.startsWith('data:video/mp4;base64,')).toBe(true);
+    });
+
+    it('classifies unknown binary MIME as kind binary', async () => {
+        const file = new File(['\u0000\u0001\u0002'], 'app.exe', {
+            type: 'application/octet-stream',
+        });
+
+        await expect(readTextFile(file)).resolves.toEqual({
+            name: 'app.exe',
+            kind: 'binary',
+            mime: 'application/octet-stream',
+            content: '\u0000\u0001\u0002',
+        });
+    });
+
+    it('downgrades text-mislabeled binaries via the NUL-byte sniff', async () => {
+        // Empty MIME + non-text extension → extension fallback says binary
+        // anyway; force the sniff path with an empty MIME but .txt extension
+        const sniffed = new File(['ok\u0000bad'], 'tricky.txt', { type: '' });
+        await expect(readTextFile(sniffed)).resolves.toMatchObject({ kind: 'binary' });
+    });
+
+    it('falls back to extension detection when the MIME type is empty', async () => {
+        const file = new File(['export {}'], 'module.ts', { type: '' });
+
+        await expect(readTextFile(file)).resolves.toMatchObject({ kind: 'text' });
     });
 });
 
@@ -56,17 +107,17 @@ describe('fileStore', () => {
                 <button
                     type="button"
                     data-testid="open-a"
-                    onClick={() => store.openFile({ name: 'a.txt', content: 'aaa' })}
+                    onClick={() => store.openFile({ name: 'a.txt', kind: 'text', mime: 'text/plain', content: 'aaa' })}
                 />
                 <button
                     type="button"
                     data-testid="open-b"
-                    onClick={() => store.openFile({ name: 'b.txt', content: 'bbb' })}
+                    onClick={() => store.openFile({ name: 'b.txt', kind: 'text', mime: 'text/plain', content: 'bbb' })}
                 />
                 <button
                     type="button"
                     data-testid="open-a-again"
-                    onClick={() => store.openFile({ name: 'a.txt', content: 'a2' })}
+                    onClick={() => store.openFile({ name: 'a.txt', kind: 'text', mime: 'text/plain', content: 'a2' })}
                 />
                 <button
                     type="button"

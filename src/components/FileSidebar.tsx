@@ -5,10 +5,11 @@ import type { FormatterFile } from '../functions';
 
 // ─── Sidebar chrome ──────────────────────────────────────────────────────────
 
-// Right-hand column of the dashboard. Fixed width so the left content pane
-// (reserved for future formatter output) keeps the remaining space. The list
-// scrolls internally — the page itself never scrolls (viewport lock in
-// src/app.css).
+// LEFT column of the dashboard (first flex child of ContentArea in
+// dashboards/FormatterDashboard.tsx). Fixed width so the content pane to its
+// right keeps the remaining space. The list scrolls internally — the page
+// itself never scrolls (viewport lock in src/app.css). The divider sits on
+// the RIGHT edge of the sidebar since the content lives to its right.
 const SidebarRoot = styledComponent('aside', {
     width: 280,
     flexShrink: 0,
@@ -17,7 +18,7 @@ const SidebarRoot = styledComponent('aside', {
     height: '100%',
     boxSizing: 'border-box' as const,
     background: '#0b1120',
-    borderLeft: '1px solid #1e293b',
+    borderRight: '1px solid #1e293b',
     overflow: 'hidden' as const,
 });
 
@@ -116,8 +117,8 @@ export type FileSidebarProps = {
 
 // Sidebar listing every file accepted by the dashboard. Files enter ONLY by
 // dropping them onto the page (the dashboard's global drop handler reads them
-// via readTextFile → openFile). The left content pane is intentionally empty
-// for now — this component only owns the file list.
+// via readTextFile → openFile). Clicking an entry selects it — the dashboard
+// then renders that file's content in the pane to the sidebar's right.
 export const FileSidebar = ({ files, activeFileId, onSelect, onClose }: FileSidebarProps) => {
     const handleKeyDown = (name: string) => (event: React.KeyboardEvent<HTMLDivElement>) => {
         // Enter and Space both select the entry when keyboard-focused

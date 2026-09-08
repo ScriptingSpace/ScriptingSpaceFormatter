@@ -10,8 +10,8 @@ afterEach(() => {
 
 // Two-file fixture in drop order — a.txt is the active entry
 const FILES: FormatterFile[] = [
-    { name: 'a.txt', content: 'aaa' },
-    { name: 'b.txt', content: 'bbb' },
+    { name: 'a.txt', kind: 'text', mime: 'text/plain', content: 'aaa' },
+    { name: 'b.txt', kind: 'text', mime: 'text/plain', content: 'bbb' },
 ];
 
 // Spy helpers recording select/close invocations from the component
