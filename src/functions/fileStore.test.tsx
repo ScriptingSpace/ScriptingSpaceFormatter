@@ -106,14 +106,15 @@ describe('readTextFile', () => {
 });
 
 describe('fileStore', () => {
-    // Minimal consumer rendering the session summary: file names, active id
+    // Minimal consumer rendering the session summary: file names, selection
+    // (in selection order), focused name
     const Consumer = () => {
         const store = formatterFileStore();
         return (
             <div data-testid="store-consumer">
                 {store.files.map((entry) => entry.name).join(',')}
                 {'|'}
-                {store.activeFileId ?? 'none'}
+                {store.activeFileIds.join('+') || 'none'}
             </div>
         );
     };
@@ -148,6 +149,16 @@ describe('fileStore', () => {
                 />
                 <button
                     type="button"
+                    data-testid="select-b"
+                    onClick={() => store.selectFile('b.txt')}
+                />
+                <button
+                    type="button"
+                    data-testid="focus-b"
+                    onClick={() => store.focusFile('b.txt')}
+                />
+                <button
+                    type="button"
                     data-testid="deselect"
                     onClick={() => store.deselectFiles()}
                 />
@@ -155,9 +166,8 @@ describe('fileStore', () => {
                     type="button"
                     data-testid="edit-active"
                     onClick={() => {
-                        const active = store.files.find(
-                            (entry) => entry.name === store.activeFileId,
-                        );
+                        const focused = store.activeFileIds[store.activeFileIds.length - 1];
+                        const active = store.files.find((entry) => entry.name === focused);
                         if (active) store.updateContent(active.name, 'edited');
                     }}
                 />
@@ -165,7 +175,8 @@ describe('fileStore', () => {
                     type="button"
                     data-testid="close-active"
                     onClick={() => {
-                        if (store.activeFileId) store.closeFile(store.activeFileId);
+                        const focused = store.activeFileIds[store.activeFileIds.length - 1];
+                        if (focused) store.closeFile(focused);
                     }}
                 />
             </>
@@ -175,10 +186,10 @@ describe('fileStore', () => {
     // Harness mirroring the real dashboard multi-file session implementation
     const Harness = () => {
         const files = useStateHook<FormatterFile[]>([]);
-        const activeFileId = useStateHook<string | null>(null);
+        const activeFileIds = useStateHook<string[]>([]);
         const session = {
             files: files(),
-            activeFileId: activeFileId(),
+            activeFileIds: activeFileIds(),
             openFile: (next: FormatterFile) => {
                 const current = files();
                 files(
@@ -186,18 +197,33 @@ describe('fileStore', () => {
                         ? current.map((entry) => (entry.name === next.name ? next : entry))
                         : [...current, next],
                 );
-                activeFileId(next.name);
+                activeFileIds([next.name]);
             },
-            selectFile: (name: string) => activeFileId(name),
-            deselectFiles: () => activeFileId(null),
+            selectFile: (name: string) => {
+                const current = activeFileIds();
+                if (current.includes(name)) {
+                    activeFileIds(current.filter((entry) => entry !== name));
+                } else {
+                    activeFileIds([...current, name]);
+                }
+            },
+            focusFile: (name: string) => {
+                const current = activeFileIds();
+                if (!current.includes(name)) return;
+                activeFileIds([...current.filter((entry) => entry !== name), name]);
+            },
+            deselectFiles: () => activeFileIds([]),
             updateContent: (name: string, content: string) => {
                 files(files().map((entry) => (entry.name === name ? { ...entry, content } : entry)));
             },
             closeFile: (name: string) => {
                 const remaining = files().filter((entry) => entry.name !== name);
                 files(remaining);
-                if (activeFileId() === name) {
-                    activeFileId(remaining.length ? remaining[remaining.length - 1].name : null);
+                const selection = activeFileIds().filter((entry) => entry !== name);
+                if (selection.length === 0 && remaining.length > 0) {
+                    activeFileIds([remaining[remaining.length - 1].name]);
+                } else {
+                    activeFileIds(selection);
                 }
             },
         };
@@ -211,13 +237,13 @@ describe('fileStore', () => {
 
     const sessionSummary = (): string => screen.getByTestId('store-consumer').textContent ?? '';
 
-    it('starts with no files and an empty active id', () => {
+    it('starts with no files and an empty selection', () => {
         render(<Harness />);
 
         expect(sessionSummary()).toBe('|none');
     });
 
-    it('openFile appends an entry and selects it; a second file becomes the new active entry', () => {
+    it('openFile appends an entry and makes it the ONLY selected one; a second file replaces the selection', () => {
         render(<Harness />);
 
         fireEvent.click(screen.getByTestId('open-a'));
@@ -238,24 +264,70 @@ describe('fileStore', () => {
         expect(sessionSummary()).toBe('a.txt,b.txt|a.txt');
     });
 
-    it('selectFile switches the active entry', () => {
+    it('selectFile TOGGLES names into a multi-selection, in selection order', () => {
+        render(<Harness />);
+
+        fireEvent.click(screen.getByTestId('open-a'));
+        fireEvent.click(screen.getByTestId('open-b'));
+        // Selection is [b.txt] (last drop) → clicking a.txt ADDS it;
+        // b.txt stays selected, a.txt is focused (last)
+        fireEvent.click(screen.getByTestId('select-a'));
+
+        expect(sessionSummary()).toBe('a.txt,b.txt|b.txt+a.txt');
+
+        // Clicking b.txt now REMOVES it (toggle off — it was selected)
+        fireEvent.click(screen.getByTestId('select-b'));
+        expect(sessionSummary()).toBe('a.txt,b.txt|a.txt');
+
+        // Clicking b.txt again ADDS it back at the end → focused
+        fireEvent.click(screen.getByTestId('select-b'));
+        expect(sessionSummary()).toBe('a.txt,b.txt|a.txt+b.txt');
+    });
+
+    it('selectFile REMOVES a selected name (toggle off)', () => {
+        render(<Harness />);
+
+        fireEvent.click(screen.getByTestId('open-a'));
+        fireEvent.click(screen.getByTestId('open-b'));
+        // Selection is [b.txt]; toggle a.txt in → [b.txt, a.txt]
+        fireEvent.click(screen.getByTestId('select-a'));
+        fireEvent.click(screen.getByTestId('select-b'));
+
+        // b.txt toggled OUT → [a.txt]
+        expect(sessionSummary()).toBe('a.txt,b.txt|a.txt');
+
+        // Toggling the last remaining entry off → empty selection
+        fireEvent.click(screen.getByTestId('select-a'));
+        expect(sessionSummary()).toBe('a.txt,b.txt|none');
+    });
+
+    it('focusFile moves a selected name to the END without changing membership', () => {
+        render(<Harness />);
+
+        fireEvent.click(screen.getByTestId('open-a'));
+        fireEvent.click(screen.getByTestId('open-b'));
+        // Build the selection [b.txt, a.txt] (a.txt focused)
+        fireEvent.click(screen.getByTestId('select-a'));
+        // Focus b.txt → moved to the end; membership unchanged
+        fireEvent.click(screen.getByTestId('focus-b'));
+
+        expect(sessionSummary()).toBe('a.txt,b.txt|a.txt+b.txt');
+
+        // focusFile on an UNSELECTED name is a no-op
+        fireEvent.click(screen.getByTestId('deselect'));
+        fireEvent.click(screen.getByTestId('focus-b'));
+        expect(sessionSummary()).toBe('a.txt,b.txt|none');
+    });
+
+    it('deselectFiles clears the whole selection without touching the file list', () => {
         render(<Harness />);
 
         fireEvent.click(screen.getByTestId('open-a'));
         fireEvent.click(screen.getByTestId('open-b'));
         fireEvent.click(screen.getByTestId('select-a'));
-
-        expect(sessionSummary()).toBe('a.txt,b.txt|a.txt');
-    });
-
-    it('deselectFiles clears the active entry without touching the file list', () => {
-        render(<Harness />);
-
-        fireEvent.click(screen.getByTestId('open-a'));
-        fireEvent.click(screen.getByTestId('open-b'));
         fireEvent.click(screen.getByTestId('deselect'));
 
-        // Both entries remain; nothing is active anymore
+        // Both entries remain; nothing is selected anymore
         expect(sessionSummary()).toBe('a.txt,b.txt|none');
 
         // The session stays usable — selecting again works after a deselect
@@ -263,30 +335,47 @@ describe('fileStore', () => {
         expect(sessionSummary()).toBe('a.txt,b.txt|a.txt');
     });
 
-    it('updateContent edits exactly the targeted file', () => {
+    it('updateContent edits exactly the focused (last selected) file', () => {
         render(<Harness />);
 
         fireEvent.click(screen.getByTestId('open-a'));
         fireEvent.click(screen.getByTestId('open-b'));
         fireEvent.click(screen.getByTestId('edit-active'));
 
-        // b.txt is active → only b.txt is edited; entries and selection unchanged
+        // b.txt is focused → only b.txt is edited; entries and selection unchanged
         expect(sessionSummary()).toBe('a.txt,b.txt|b.txt');
     });
 
-    it('closeFile removes the entry and falls back to the most recent remaining entry', () => {
+    it('closeFile removes the entry, drops it from the selection, and falls back to the most recent remaining entry', () => {
         render(<Harness />);
 
         fireEvent.click(screen.getByTestId('open-a'));
         fireEvent.click(screen.getByTestId('open-b'));
         fireEvent.click(screen.getByTestId('close-active'));
 
-        // b.txt removed → a.txt (most recent remaining) becomes active
+        // b.txt removed → a.txt (most recent remaining) becomes the selection
         expect(sessionSummary()).toBe('a.txt|a.txt');
 
         fireEvent.click(screen.getByTestId('close-active'));
 
         // Last entry removed → empty session
         expect(sessionSummary()).toBe('|none');
+    });
+
+    it('closeFile keeps the OTHER selected entries when the selection has more than one name', () => {
+        render(<Harness />);
+
+        fireEvent.click(screen.getByTestId('open-a'));
+        fireEvent.click(screen.getByTestId('open-b'));
+        // Selection [b.txt, a.txt] — a.txt focused
+        fireEvent.click(screen.getByTestId('select-a'));
+
+        // Close the FOCUSED entry (a.txt). The other selected name (b.txt)
+        // survives — the fallback-to-latest rule only applies when the
+        // selection becomes EMPTY. a.txt is removed from the file list AND
+        // from the selection.
+        fireEvent.click(screen.getByTestId('close-active'));
+
+        expect(sessionSummary()).toBe('b.txt|b.txt');
     });
 });

@@ -19,10 +19,11 @@ export type DashboardControls = {
 //                     sequence order (title block, export button, …)
 // - `slots.sidebar` → rendered inside the dashboard's left column, in plugin
 //                     sequence order (the file list, …)
-// - `renderFile`    → called every time a sidebar file is selected; every
-//                     plugin that returns a node contributes to the content
-//                     area. One contributor → direct render; two or more →
-//                     the dashboard switches to TABS, one tab per plugin.
+// - `renderFile`    → called every time the FOCUSED sidebar file (the last
+//                     one in the multi-selection) changes; every plugin that
+//                     returns a node contributes to the content area. One
+//                     contributor → direct render; two or more → the
+//                     dashboard switches to TABS, one tab per plugin.
 // - `onFilesDropped`→ called with every browser File dropped on the page, in
 //                     plugin sequence order (the file-reader plugin uses it
 //                     to read + classify + open each file).

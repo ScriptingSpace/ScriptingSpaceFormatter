@@ -130,9 +130,11 @@ const EntryClose = styledComponent('button', {
 export type FileSidebarProps = {
     // All accepted files, in drop order — rendered one entry per file
     files: FormatterFile[];
-    // Currently selected entry (a file name), null when nothing is selected
-    activeFileId: string | null;
-    // Fired when an entry body is clicked — selects that file
+    // All SELECTED entries (file names) — multi-select: each selected entry
+    // is highlighted; empty when nothing is selected
+    activeFileIds: string[];
+    // Fired when an entry body is clicked — TOGGLES that file in/out of the
+    // selection (multi-select)
     onSelect: (name: string) => void;
     // Fired when the sidebar background (anything that is NOT an entry) is
     // clicked — deselects every entry. Optional: consumers that do not
@@ -148,13 +150,14 @@ export type FileSidebarProps = {
 
 // Sidebar listing every file accepted by the dashboard. Files enter ONLY by
 // dropping them onto the page (the dashboard's global drop handler reads them
-// via readTextFile → openFile). Clicking an entry selects it — the dashboard
-// then renders that file's content in the pane to the sidebar's right.
+// via readTextFile → openFile). Clicking an entry TOGGLES it in/out of the
+// multi-selection — the dashboard then renders the FOCUSED (last selected)
+// file's content in the pane to the sidebar's right.
 // Entries can also be dragged BETWEEN each other to re-order the list: the
 // pointer's position relative to the hovered entry's vertical midpoint picks
 // the insertion slot, a DropLine marks it between the two entries, and
 // dropping fires onMove(fromName, toIndex).
-export const FileSidebar = ({ files, activeFileId, onSelect, onDeselect, onClose, onMove }: FileSidebarProps) => {
+export const FileSidebar = ({ files, activeFileIds, onSelect, onDeselect, onClose, onMove }: FileSidebarProps) => {
     // HTML5 drag state — the entry being dragged (a file name) and the
     // insertion index (0..files.length) where the DropLine currently sits.
     // insertAt is null when no valid drop position is hovered.
@@ -214,6 +217,10 @@ export const FileSidebar = ({ files, activeFileId, onSelect, onDeselect, onClose
         onDragEnd: endDrag,
     });
 
+    // Multi-select membership: the entry is highlighted when its name is in
+    // the selection (order-independent — focus order lives in the store)
+    const isSelected = (name: string) => activeFileIds.includes(name);
+
     // List-level dragleave: clears the DropLine when the pointer truly
     // exits the list. Leave events bubble from child entries mid-traversal,
     // so only clear when the related target is outside the list (jsdom
@@ -248,7 +255,7 @@ export const FileSidebar = ({ files, activeFileId, onSelect, onDeselect, onClose
                                 {/* Insertion line BEFORE this entry (index slot) */}
                                 {insertAt() === index && <DropLine data-testid="drop-line" />}
                                 <FileEntry
-                                    active={entry.name === activeFileId}
+                                    active={isSelected(entry.name)}
                                     dragging={dragName() === entry.name}
                                     // stopPropagation keeps the bubbling click
                                     // from reaching SidebarRoot's deselect
@@ -260,7 +267,7 @@ export const FileSidebar = ({ files, activeFileId, onSelect, onDeselect, onClose
                                     onKeyDown={handleKeyDown(entry.name)}
                                     role="button"
                                     tabIndex={0}
-                                    aria-pressed={entry.name === activeFileId}
+                                    aria-pressed={isSelected(entry.name)}
                                     data-testid={`sidebar-file-${entry.name}`}
                                     {...dragHandlers(entry.name, index)}
                                 >
@@ -300,7 +307,7 @@ export const ConnectedFileSidebar = () => {
     return (
         <FileSidebar
             files={store.files}
-            activeFileId={store.activeFileId}
+            activeFileIds={store.activeFileIds}
             onSelect={store.selectFile}
             onDeselect={store.deselectFiles}
             onClose={store.closeFile}

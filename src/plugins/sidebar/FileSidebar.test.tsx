@@ -28,7 +28,7 @@ const makeSpies = () => {
 
 describe('FileSidebar', () => {
     it('shows the empty-state hint when no files have been accepted', () => {
-        render(<FileSidebar files={[]} activeFileId={null} onSelect={() => {}} onClose={() => {}} onMove={() => {}} />);
+        render(<FileSidebar files={[]} activeFileIds={[]} onSelect={() => {}} onClose={() => {}} onMove={() => {}} />);
 
         // Header has no count suffix when the list is empty
         expect(screen.getByTestId('file-sidebar').textContent).toBe(
@@ -42,7 +42,7 @@ describe('FileSidebar', () => {
         render(
             <FileSidebar
                 files={FILES}
-                activeFileId="a.txt"
+                activeFileIds={['a.txt']}
                 onSelect={spies.onSelect}
                 onClose={spies.onClose}
                 onMove={spies.onMove}
@@ -59,25 +59,43 @@ describe('FileSidebar', () => {
 
     it('marks only the active entry as selected', () => {
         render(
-            <FileSidebar files={FILES} activeFileId="b.txt" onSelect={() => {}} onClose={() => {}} onMove={() => {}} />,
+            <FileSidebar files={FILES} activeFileIds={['b.txt']} onSelect={() => {}} onClose={() => {}} onMove={() => {}} />,
         );
 
         expect(screen.getByTestId('sidebar-file-a.txt').getAttribute('aria-pressed')).toBe('false');
         expect(screen.getByTestId('sidebar-file-b.txt').getAttribute('aria-pressed')).toBe('true');
     });
 
-    it('selects a file when its entry is clicked', () => {
+    it('marks EVERY selected entry as highlighted in multi-select', () => {
+        render(
+            <FileSidebar
+                files={FILES}
+                activeFileIds={['a.txt', 'b.txt']}
+                onSelect={() => {}}
+                onClose={() => {}}
+                onMove={() => {}}
+            />,
+        );
+
+        // Multi-select: both entries carry aria-pressed=true
+        expect(screen.getByTestId('sidebar-file-a.txt').getAttribute('aria-pressed')).toBe('true');
+        expect(screen.getByTestId('sidebar-file-b.txt').getAttribute('aria-pressed')).toBe('true');
+    });
+
+    it('fires onSelect on entry click — the store toggles multi-select membership', () => {
         const spies = makeSpies();
         render(
             <FileSidebar
                 files={FILES}
-                activeFileId="a.txt"
+                activeFileIds={['a.txt']}
                 onSelect={spies.onSelect}
                 onClose={spies.onClose}
                 onMove={spies.onMove}
             />,
         );
 
+        // The sidebar itself stays toggle-agnostic: it forwards the clicked
+        // name; the store decides add vs remove
         fireEvent.click(screen.getByTestId('sidebar-file-b.txt'));
 
         expect(spies.calls).toEqual(['select:b.txt']);
@@ -88,7 +106,7 @@ describe('FileSidebar', () => {
         render(
             <FileSidebar
                 files={FILES}
-                activeFileId="a.txt"
+                activeFileIds={['a.txt']}
                 onSelect={spies.onSelect}
                 onDeselect={spies.onDeselect}
                 onClose={spies.onClose}
@@ -108,7 +126,7 @@ describe('FileSidebar', () => {
         render(
             <FileSidebar
                 files={FILES}
-                activeFileId="a.txt"
+                activeFileIds={['a.txt']}
                 onSelect={spies.onSelect}
                 onDeselect={spies.onDeselect}
                 onClose={spies.onClose}
@@ -128,7 +146,7 @@ describe('FileSidebar', () => {
         render(
             <FileSidebar
                 files={FILES}
-                activeFileId="a.txt"
+                activeFileIds={['a.txt']}
                 onSelect={spies.onSelect}
                 onDeselect={spies.onDeselect}
                 onClose={spies.onClose}
@@ -148,7 +166,7 @@ describe('FileSidebar', () => {
         render(
             <FileSidebar
                 files={FILES}
-                activeFileId="a.txt"
+                activeFileIds={['a.txt']}
                 onSelect={spies.onSelect}
                 onClose={spies.onClose}
                 onMove={spies.onMove}
@@ -166,7 +184,7 @@ describe('FileSidebar', () => {
         render(
             <FileSidebar
                 files={FILES}
-                activeFileId={null}
+                activeFileIds={[]}
                 onSelect={spies.onSelect}
                 onClose={spies.onClose}
                 onMove={spies.onMove}
@@ -216,7 +234,7 @@ describe('FileSidebar', () => {
         render(
             <FileSidebar
                 files={FILES}
-                activeFileId={null}
+                activeFileIds={[]}
                 onSelect={() => {}}
                 onClose={() => {}}
                 onMove={() => {}}
@@ -232,7 +250,7 @@ describe('FileSidebar', () => {
         render(
             <FileSidebar
                 files={FILES}
-                activeFileId={null}
+                activeFileIds={[]}
                 onSelect={spies.onSelect}
                 onClose={spies.onClose}
                 onMove={spies.onMove}
@@ -263,7 +281,7 @@ describe('FileSidebar', () => {
         render(
             <FileSidebar
                 files={FILES}
-                activeFileId={null}
+                activeFileIds={[]}
                 onSelect={spies.onSelect}
                 onClose={spies.onClose}
                 onMove={spies.onMove}
@@ -291,7 +309,7 @@ describe('FileSidebar', () => {
         render(
             <FileSidebar
                 files={FILES}
-                activeFileId={null}
+                activeFileIds={[]}
                 onSelect={spies.onSelect}
                 onClose={spies.onClose}
                 onMove={spies.onMove}
@@ -317,7 +335,7 @@ describe('FileSidebar', () => {
         render(
             <FileSidebar
                 files={FILES}
-                activeFileId={null}
+                activeFileIds={[]}
                 onSelect={spies.onSelect}
                 onClose={spies.onClose}
                 onMove={spies.onMove}
@@ -341,7 +359,7 @@ describe('FileSidebar', () => {
         render(
             <FileSidebar
                 files={FILES}
-                activeFileId={null}
+                activeFileIds={[]}
                 onSelect={spies.onSelect}
                 onClose={spies.onClose}
                 onMove={spies.onMove}
@@ -367,7 +385,7 @@ describe('FileSidebar', () => {
         render(
             <FileSidebar
                 files={FILES}
-                activeFileId={null}
+                activeFileIds={[]}
                 onSelect={() => {}}
                 onClose={() => {}}
                 onMove={() => {}}

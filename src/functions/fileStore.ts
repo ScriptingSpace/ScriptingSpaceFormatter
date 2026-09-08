@@ -34,12 +34,19 @@ export type FormatterFile = {
 export type FormatterFileContext = {
     // All accepted files, in drop order
     files: FormatterFile[];
-    // Currently selected entry (a file name), null when nothing is selected
-    activeFileId: string | null;
-    // Drop entry point: appends (or replaces same-name) and selects the entry
+    // Currently SELECTED entries (file names, in SELECTION order — the LAST
+    // entry is the focused one whose content the pane renders). Multi-select:
+    // sidebar clicks toggle names in/out; openFile replaces the selection.
+    activeFileIds: string[];
+    // Drop entry point: appends (or replaces same-name) and makes the entry
+    // the ONLY selected one (a drop activates the latest file)
     openFile: (file: FormatterFile) => void;
-    // Sidebar click: make this file the active one
+    // Sidebar entry click: TOGGLE the name in/out of the selection
     selectFile: (name: string) => void;
+    // Content-area file-option click: move an already-selected name to the
+    // END of the selection (making it the focused/rendered one) without
+    // changing selection membership. No-op for unselected names.
+    focusFile: (name: string) => void;
     // Sidebar background click (not on any entry): clear the selection so no
     // file is active and the content pane falls back to its placeholder
     deselectFiles: () => void;
@@ -61,9 +68,10 @@ export const {
     contextStore: formatterFileStore,
 } = localContextStore<FormatterFileContext>({
     files: [],
-    activeFileId: null,
+    activeFileIds: [],
     openFile: () => {},
     selectFile: () => {},
+    focusFile: () => {},
     deselectFiles: () => {},
     updateContent: () => {},
     closeFile: () => {},

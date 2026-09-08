@@ -200,7 +200,7 @@ describe('FormatterDashboard', () => {
         expect(screen.getAllByTestId('sidebar-file-one.txt')).toHaveLength(1);
     });
 
-    it('selects a sidebar entry on click and highlights it', async () => {
+    it('selects a sidebar entry on click and highlights it (toggle into the selection)', async () => {
         render(<FormatterDashboard />);
 
         fireEvent.drop(screen.getByTestId('dashboard-root'), {
@@ -215,15 +215,240 @@ describe('FormatterDashboard', () => {
             expect(screen.getByTestId('sidebar-file-beta.txt')).toBeDefined();
         });
 
-        // Clicking an earlier entry re-selects it
+        // After the drop only beta is selected
+        expect(screen.getByTestId('sidebar-file-alpha.txt').getAttribute('aria-pressed')).toBe(
+            'false',
+        );
+
+        // Clicking an unselected entry ADDS it to the selection — beta stays
+        // selected too (multi-select toggle, not exclusive switch)
         fireEvent.click(screen.getByTestId('sidebar-file-alpha.txt'));
 
         expect(screen.getByTestId('sidebar-file-alpha.txt').getAttribute('aria-pressed')).toBe(
             'true',
         );
         expect(screen.getByTestId('sidebar-file-beta.txt').getAttribute('aria-pressed')).toBe(
+            'true',
+        );
+    });
+
+    // ─── Multi-select on the sidebar ─────────────────────────────────────────
+
+    it('supports multi-select: clicking entries toggles them and highlights every selected entry', async () => {
+        render(<FormatterDashboard />);
+
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [
+                    new File(['alpha'], 'alpha.txt', { type: 'text/plain' }),
+                    new File(['beta'], 'beta.txt', { type: 'text/plain' }),
+                    new File(['gamma'], 'gamma.txt', { type: 'text/plain' }),
+                ],
+            },
+        });
+        await waitFor(() => {
+            expect(screen.getByTestId('sidebar-file-gamma.txt')).toBeDefined();
+        });
+
+        // After the drop only gamma is selected
+        expect(screen.getByTestId('sidebar-file-gamma.txt').getAttribute('aria-pressed')).toBe(
+            'true',
+        );
+
+        // Click alpha → toggles INTO the selection (both stay highlighted)
+        fireEvent.click(screen.getByTestId('sidebar-file-alpha.txt'));
+        expect(screen.getByTestId('sidebar-file-alpha.txt').getAttribute('aria-pressed')).toBe(
+            'true',
+        );
+        expect(screen.getByTestId('sidebar-file-gamma.txt').getAttribute('aria-pressed')).toBe(
+            'true',
+        );
+
+        // Click gamma → toggles OUT of the selection
+        fireEvent.click(screen.getByTestId('sidebar-file-gamma.txt'));
+        expect(screen.getByTestId('sidebar-file-gamma.txt').getAttribute('aria-pressed')).toBe(
             'false',
         );
+        expect(screen.getByTestId('sidebar-file-alpha.txt').getAttribute('aria-pressed')).toBe(
+            'true',
+        );
+    });
+
+    it('renders the focused (last selected) file content while several files are selected', async () => {
+        render(<FormatterDashboard />);
+
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [
+                    new File(['alpha text'], 'alpha.txt', { type: 'text/plain' }),
+                    new File(['beta text'], 'beta.txt', { type: 'text/plain' }),
+                ],
+            },
+        });
+        // Latest drop (beta) is focused → its content renders
+        await waitFor(() => {
+            expect(screen.getByTestId('file-content-text').textContent).toBe('beta text');
+        });
+
+        // Select alpha too → the newly clicked entry becomes focused (last
+        // in selection — ctrl-click semantics) → its content renders
+        fireEvent.click(screen.getByTestId('sidebar-file-alpha.txt'));
+        expect(screen.getByTestId('file-content-text').textContent).toBe('alpha text');
+    });
+
+    it('shows file options in the content area when several files are selected', async () => {
+        render(<FormatterDashboard />);
+
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [
+                    new File(['alpha text'], 'alpha.txt', { type: 'text/plain' }),
+                    new File(['beta text'], 'beta.txt', { type: 'text/plain' }),
+                ],
+            },
+        });
+        await waitFor(() => {
+            expect(screen.getByTestId('file-content-text').textContent).toBe('beta text');
+        });
+
+        // Select alpha too → multi-select → the file-options layout appears
+        fireEvent.click(screen.getByTestId('sidebar-file-alpha.txt'));
+
+        expect(screen.getByTestId('file-options')).toBeDefined();
+        // One option per selected file, in SIDEBAR order (alpha first — it
+        // was dropped first — beta second), regardless of selection order.
+        // Options are read as the BAR's element children — the /^file-option-/
+        // prefix would also match the bar itself and the panel testid.
+        const optionTestIds = () =>
+            Array.from(screen.getByTestId('file-option-bar').children).map(
+                (option) => option.getAttribute('data-testid'),
+            );
+        expect(optionTestIds()).toEqual(['file-option-alpha.txt', 'file-option-beta.txt']);
+
+        // The FOCUSED file (alpha, last clicked) is the active option and its
+        // content fills the panel — asserted via the panel testid
+        expect(screen.getByTestId('file-option-panel-alpha.txt')).toBeDefined();
+        expect(screen.getByTestId('file-content-text').textContent).toBe('alpha text');
+    });
+
+    it('keeps the file-option order FIXED in sidebar order when clicking options (no reshuffle)', async () => {
+        render(<FormatterDashboard />);
+
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [
+                    new File(['alpha text'], 'alpha.txt', { type: 'text/plain' }),
+                    new File(['beta text'], 'beta.txt', { type: 'text/plain' }),
+                    new File(['gamma text'], 'gamma.txt', { type: 'text/plain' }),
+                ],
+            },
+        });
+        await waitFor(() => {
+            expect(screen.getByTestId('sidebar-file-gamma.txt')).toBeDefined();
+        });
+
+        // Build a multi-selection in REVERSE sidebar order: gamma (dropped
+        // last, already selected), then alpha, then beta
+        fireEvent.click(screen.getByTestId('sidebar-file-alpha.txt'));
+        fireEvent.click(screen.getByTestId('sidebar-file-beta.txt'));
+
+        // The option bar is in SIDEBAR order: alpha, beta, gamma
+        const optionTestIds = () =>
+            Array.from(screen.getByTestId('file-option-bar').children).map(
+                (option) => option.getAttribute('data-testid'),
+            );
+        expect(optionTestIds()).toEqual([
+            'file-option-alpha.txt',
+            'file-option-beta.txt',
+            'file-option-gamma.txt',
+        ]);
+
+        // Click the LAST option (gamma) → focus moves but the bar order
+        // must NOT change (the old selection-order rendering would move
+        // gamma to the end / reshuffle the bar)
+        fireEvent.click(screen.getByTestId('file-option-gamma.txt'));
+
+        expect(optionTestIds()).toEqual([
+            'file-option-alpha.txt',
+            'file-option-beta.txt',
+            'file-option-gamma.txt',
+        ]);
+        // Gamma is now focused and its content renders
+        expect(screen.getByTestId('file-option-panel-gamma.txt')).toBeDefined();
+        expect(screen.getByTestId('file-content-text').textContent).toBe('gamma text');
+    });
+
+    it('clicking a file option focuses that file without changing the selection', async () => {
+        render(<FormatterDashboard />);
+
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [
+                    new File(['alpha text'], 'alpha.txt', { type: 'text/plain' }),
+                    new File(['beta text'], 'beta.txt', { type: 'text/plain' }),
+                ],
+            },
+        });
+        await waitFor(() => {
+            expect(screen.getByTestId('file-content-text').textContent).toBe('beta text');
+        });
+
+        // Multi-select: [beta, alpha]
+        fireEvent.click(screen.getByTestId('sidebar-file-alpha.txt'));
+
+        // Click the alpha option → alpha's content renders; BOTH entries stay
+        // selected (options never change selection membership)
+        fireEvent.click(screen.getByTestId('file-option-alpha.txt'));
+
+        expect(screen.getByTestId('file-content-text').textContent).toBe('alpha text');
+        expect(screen.getByTestId('sidebar-file-alpha.txt').getAttribute('aria-pressed')).toBe(
+            'true',
+        );
+        expect(screen.getByTestId('sidebar-file-beta.txt').getAttribute('aria-pressed')).toBe(
+            'true',
+        );
+        // The option bar still lists both files, alpha now focused
+        expect(screen.getByTestId('file-option-beta.txt')).toBeDefined();
+        expect(screen.getByTestId('file-option-alpha.txt')).toBeDefined();
+    });
+
+    it('keeps the single-select direct render when exactly one file is selected', async () => {
+        render(<FormatterDashboard />);
+
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: { files: [new File(['hello'], 'open.txt', { type: 'text/plain' })] },
+        });
+
+        await waitFor(() => {
+            expect(screen.getByTestId('file-content-text').textContent).toBe('hello');
+        });
+        // Single selection → NO file options
+        expect(screen.queryByTestId('file-options')).toBeNull();
+    });
+
+    it('toggling back to a single selection removes the file options', async () => {
+        render(<FormatterDashboard />);
+
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [
+                    new File(['alpha text'], 'alpha.txt', { type: 'text/plain' }),
+                    new File(['beta text'], 'beta.txt', { type: 'text/plain' }),
+                ],
+            },
+        });
+        await waitFor(() => {
+            expect(screen.getByTestId('sidebar-file-alpha.txt')).toBeDefined();
+        });
+
+        // Multi-select → options
+        fireEvent.click(screen.getByTestId('sidebar-file-alpha.txt'));
+        expect(screen.getByTestId('file-options')).toBeDefined();
+
+        // Toggle alpha back off → single selection → options disappear
+        fireEvent.click(screen.getByTestId('sidebar-file-alpha.txt'));
+        expect(screen.queryByTestId('file-options')).toBeNull();
+        expect(screen.getByTestId('file-content-text').textContent).toBe('beta text');
     });
 
     it('deselects every entry when clicking the sidebar outside of any entry', async () => {
@@ -408,16 +633,19 @@ describe('FormatterDashboard', () => {
             expect(screen.getByTestId('file-content-image')).toBeDefined();
         });
 
-        // Click the text entry → render mode swaps to the text view
+        // Click the text entry → toggles into the selection AND becomes
+        // focused (last) → render mode swaps to the text view
         fireEvent.click(screen.getByTestId('sidebar-file-readme.txt'));
 
         expect(screen.getByTestId('file-content-text').textContent).toBe('plain text');
         expect(screen.queryByTestId('file-content-image')).toBeNull();
 
-        // Back to the image entry → image preview again
+        // Click the image entry → toggles back out of the selection → the
+        // previously focused text file is the only selection left → its text
+        // view renders again
         fireEvent.click(screen.getByTestId('sidebar-file-logo.png'));
-        expect(screen.getByTestId('file-content-image')).toBeDefined();
-        expect(screen.queryByTestId('file-content-text')).toBeNull();
+        expect(screen.getByTestId('file-content-text').textContent).toBe('plain text');
+        expect(screen.queryByTestId('file-content-image')).toBeNull();
     });
 
     it('falls back to the placeholder when the active file is removed', async () => {
@@ -514,19 +742,77 @@ describe('FormatterDashboard', () => {
         });
     });
 
-    it('disables the Export PDF button while the sidebar is empty', () => {
+    it('keeps the Export PDF button ENABLED with an empty sidebar but shows an error on click', () => {
         render(<FormatterDashboard />);
 
         const button = screen.getByTestId('export-pdf-button') as HTMLButtonElement;
-        // No files yet → nothing to convert, button is disabled and shows the
-        // idle label on the right side of the header
-        expect(button.disabled).toBe(true);
+        // No files and nothing selected → the button stays clickable and
+        // shows the idle label on the right side of the header
+        expect(button.disabled).toBe(false);
         expect(button.textContent).toBe('Export PDF');
+        // No error before any click
+        expect(screen.queryByTestId('export-pdf-error')).toBeNull();
+
+        // Clicking with an empty session shows the inline error instead of
+        // downloading a blank page
+        fireEvent.click(button);
+
+        expect(screen.getByTestId('export-pdf-error').textContent).toBe(
+            'No files selected — select files in the sidebar to export.',
+        );
     });
 
-    it('converts all sidebar files into one automatically downloaded PDF on click', async () => {
-        // jsdom has no object URL implementation — stub the URL lifecycle and
-        // capture the synthetic anchor click that triggers the download
+    it('shows the export error when files are loaded but NONE are selected', async () => {
+        render(<FormatterDashboard />);
+
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [
+                    new File(['alpha'], 'alpha.txt', { type: 'text/plain' }),
+                    new File(['beta'], 'beta.txt', { type: 'text/plain' }),
+                ],
+            },
+        });
+        await waitFor(() => {
+            expect(screen.getByTestId('sidebar-file-beta.txt')).toBeDefined();
+        });
+
+        // Deselect everything (sidebar background click) → files loaded but
+        // the selection is empty
+        fireEvent.click(screen.getByTestId('file-list'));
+
+        fireEvent.click(screen.getByTestId('export-pdf-button'));
+
+        expect(screen.getByTestId('export-pdf-error').textContent).toBe(
+            'No files selected — select files in the sidebar to export.',
+        );
+    });
+
+    it('clears the export error once a file is selected again', async () => {
+        render(<FormatterDashboard />);
+
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [new File(['alpha'], 'alpha.txt', { type: 'text/plain' })],
+            },
+        });
+        await waitFor(() => {
+            expect(screen.getByTestId('sidebar-file-alpha.txt')).toBeDefined();
+        });
+
+        // Deselect → click export → error appears
+        fireEvent.click(screen.getByTestId('file-list'));
+        fireEvent.click(screen.getByTestId('export-pdf-button'));
+        expect(screen.getByTestId('export-pdf-error')).toBeDefined();
+
+        // Select a file → the error disappears WITHOUT another export click
+        fireEvent.click(screen.getByTestId('sidebar-file-alpha.txt'));
+        expect(screen.queryByTestId('export-pdf-error')).toBeNull();
+    });
+
+    // Captures the exported PDF bytes from the mocked object-URL blob so the
+    // exported page content can be asserted exactly (which files made it in).
+    const setupExportCapture = () => {
         URL.createObjectURL = vi.fn(() => 'blob:mock-pdf-url');
         URL.revokeObjectURL = vi.fn();
         const clicked: HTMLAnchorElement[] = [];
@@ -535,6 +821,77 @@ describe('FormatterDashboard', () => {
         ) {
             clicked.push(this);
         });
+        // Resolves once the download fired; the blob's bytes load back as a
+        // PDFDocument for page-count/content assertions
+        const exportedBytes = async (): Promise<Uint8Array> => {
+            await vi.waitFor(() => {
+                if (clicked.length === 0) throw new Error('download not triggered yet');
+            });
+            const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob;
+            return new Uint8Array(await blob.arrayBuffer());
+        };
+        return { clicked, exportedBytes };
+    };
+
+    it('exports the SELECTED sidebar files into one automatically downloaded PDF on click', async () => {
+        const { clicked, exportedBytes } = setupExportCapture();
+
+        render(<FormatterDashboard />);
+
+        // Three files dropped → the last one (gamma) is the only selection
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [
+                    new File(['alpha'], 'alpha.txt', { type: 'text/plain' }),
+                    new File(['beta'], 'beta.txt', { type: 'text/plain' }),
+                    new File(['gamma'], 'gamma.txt', { type: 'text/plain' }),
+                ],
+            },
+        });
+        await waitFor(() => {
+            expect(screen.getByTestId('sidebar-file-gamma.txt')).toBeDefined();
+        });
+
+        // Multi-select: alpha + beta (gamma toggled OUT) — the export must
+        // contain ONLY these two files, in selection order
+        fireEvent.click(screen.getByTestId('sidebar-file-alpha.txt'));
+        fireEvent.click(screen.getByTestId('sidebar-file-beta.txt'));
+        fireEvent.click(screen.getByTestId('sidebar-file-gamma.txt'));
+
+        // Enabled once at least one file is selected
+        const button = screen.getByTestId('export-pdf-button') as HTMLButtonElement;
+        expect(button.disabled).toBe(false);
+
+        fireEvent.click(button);
+
+        // The export builds one PDF from the SELECTED files only and
+        // auto-downloads it
+        const bytes = await exportedBytes();
+        expect(clicked).toHaveLength(1);
+        expect(clicked[0].download).toBe('formatter-export.pdf');
+        expect(clicked[0].href).toBe('blob:mock-pdf-url');
+        const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob;
+        expect(blob.type).toBe('application/pdf');
+        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-pdf-url');
+
+        // Exactly the two selected files — one A4 page each, in selection
+        // order (alpha first, beta second); gamma is NOT in the export
+        const { PDFDocument } = await import('pdf-lib');
+        const doc = await PDFDocument.load(bytes);
+        expect(doc.getPageCount()).toBe(2);
+        expect(doc.getPage(0).getSize()).toEqual({ width: 595.28, height: 841.89 });
+        expect(doc.getPage(1).getSize()).toEqual({ width: 595.28, height: 841.89 });
+
+        // After the async export completes, the button returns to idle
+        await waitFor(() => {
+            expect((screen.getByTestId('export-pdf-button') as HTMLButtonElement).textContent).toBe(
+                'Export PDF',
+            );
+        });
+    });
+
+    it('exports NOTHING and shows the error when nothing is selected (no whole-session fallback)', async () => {
+        const { clicked } = setupExportCapture();
 
         render(<FormatterDashboard />);
 
@@ -550,28 +907,19 @@ describe('FormatterDashboard', () => {
             expect(screen.getByTestId('sidebar-file-beta.txt')).toBeDefined();
         });
 
-        // Enabled once at least one file is loaded
+        // Deselect everything (sidebar background click) → no selection
+        fireEvent.click(screen.getByTestId('file-list'));
+
         const button = screen.getByTestId('export-pdf-button') as HTMLButtonElement;
         expect(button.disabled).toBe(false);
 
         fireEvent.click(button);
 
-        // The export builds one PDF from BOTH files and auto-downloads it
-        await waitFor(() => {
-            expect(clicked).toHaveLength(1);
-        });
-        expect(clicked[0].download).toBe('formatter-export.pdf');
-        expect(clicked[0].href).toBe('blob:mock-pdf-url');
-        const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob;
-        expect(blob.type).toBe('application/pdf');
-        expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-pdf-url');
-
-        // After the async export completes, the button returns to idle
-        await waitFor(() => {
-            expect((screen.getByTestId('export-pdf-button') as HTMLButtonElement).textContent).toBe(
-                'Export PDF',
-            );
-        });
+        // No download fires; the inline error appears instead
+        expect(clicked).toHaveLength(0);
+        expect(screen.getByTestId('export-pdf-error').textContent).toBe(
+            'No files selected — select files in the sidebar to export.',
+        );
     });
 
     // Minimal dataTransfer stub — jsdom does not implement DataTransfer
