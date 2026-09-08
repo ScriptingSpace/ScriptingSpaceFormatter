@@ -1,3 +1,3 @@
-export * from './components';
+export * from './plugins';
 export * from './dashboards';
 export * from './functions';

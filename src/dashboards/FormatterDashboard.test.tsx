@@ -2,6 +2,19 @@ import React from 'react';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { describe, it, expect, afterEach } from 'vitest';
 import { FormatterDashboard } from './FormatterDashboard';
+import { defaultPlugins } from '../plugins';
+import type { DashboardPlugin } from '../plugins';
+
+// Extra content plugin used by the tabs tests — renders for the SAME text
+// files as the built-in text plugin, forcing the two-plugin (tabs) path.
+const formatterDemoPlugin: DashboardPlugin = {
+    id: 'formatter-demo',
+    label: 'Formatter',
+    renderFile: (file) =>
+        file.kind === 'text' ? (
+            <div data-testid="file-content-formatter">{`formatted:${file.content}`}</div>
+        ) : null,
+};
 
 afterEach(() => {
     cleanup();
@@ -23,16 +36,21 @@ describe('FormatterDashboard', () => {
         expect(screen.queryByTestId('file-content-text')).toBeNull();
     });
 
-    it('places the sidebar as the LEFT column and the content pane to its right', () => {
+    it('places the sidebar column as the LEFT child and the content pane to its right', () => {
         render(<FormatterDashboard />);
 
-        // Sidebar is the first flex child of the content area (left),
-        // content pane comes right after it (right)
+        // Sidebar column (which contains the sidebar plugin's file list) is
+        // the first flex child of the content area (left), the content pane
+        // comes right after it (right)
         const children = Array.from(
             screen.getByTestId('content-area').children,
         ) as HTMLElement[];
-        expect(children[0].getAttribute('data-testid')).toBe('file-sidebar');
+        expect(children[0].getAttribute('data-testid')).toBe('sidebar-column');
         expect(children[1].getAttribute('data-testid')).toBe('content-pane');
+        // The sidebar plugin assigned the file list into the left column
+        expect(
+            screen.getByTestId('sidebar-column').contains(screen.getByTestId('file-sidebar')),
+        ).toBe(true);
     });
 
     it('renders the sidebar with the empty-state hint when no file is accepted (drop-only flow)', () => {
@@ -525,5 +543,89 @@ describe('FormatterDashboard', () => {
         expect(screen.getByTestId('sidebar-file-gamma.txt').getAttribute('aria-pressed')).toBe(
             'true',
         );
+    });
+
+    // ─── Multi-plugin render → tabs ──────────────────────────────────────────
+
+    it('renders a single-plugin file directly with no tabs', async () => {
+        render(<FormatterDashboard />);
+
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: { files: [new File(['hello'], 'open.txt', { type: 'text/plain' })] },
+        });
+
+        // Default sequence: only the text plugin renders a text file → the
+        // node mounts directly in the pane, no tab bar
+        await waitFor(() => {
+            expect(screen.getByTestId('file-content-text').textContent).toBe('hello');
+        });
+        expect(screen.queryByTestId('content-tabs')).toBeNull();
+        expect(screen.queryByTestId('content-tab-text')).toBeNull();
+    });
+
+    it('adds tabs in the content area when two plugins render the same selected file', async () => {
+        render(<FormatterDashboard plugins={[...defaultPlugins, formatterDemoPlugin]} />);
+
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: { files: [new File(['hello'], 'open.txt', { type: 'text/plain' })] },
+        });
+
+        // Both the text plugin and the injected demo plugin contribute →
+        // the pane switches to tabs, one tab per contributor in sequence
+        // order (text first, formatter-demo second)
+        await waitFor(() => {
+            expect(screen.getByTestId('content-tabs')).toBeDefined();
+        });
+        expect(screen.getByTestId('content-tab-text').textContent).toBe('Text');
+        expect(screen.getByTestId('content-tab-formatter-demo').textContent).toBe('Formatter');
+
+        // Default active tab = the FIRST contributor (text): only its panel
+        // is mounted
+        expect(screen.getByTestId('content-tab-panel-text')).toBeDefined();
+        expect(screen.queryByTestId('content-tab-panel-formatter-demo')).toBeNull();
+        expect(screen.getByTestId('file-content-text').textContent).toBe('hello');
+        expect(screen.queryByTestId('file-content-formatter')).toBeNull();
+    });
+
+    it('switches the tab panel when another plugin tab is clicked', async () => {
+        render(<FormatterDashboard plugins={[...defaultPlugins, formatterDemoPlugin]} />);
+
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: { files: [new File(['hello'], 'open.txt', { type: 'text/plain' })] },
+        });
+        await waitFor(() => {
+            expect(screen.getByTestId('content-tabs')).toBeDefined();
+        });
+
+        // Click the Formatter tab → its panel replaces the text panel
+        fireEvent.click(screen.getByTestId('content-tab-formatter-demo'));
+
+        expect(screen.getByTestId('content-tab-panel-formatter-demo')).toBeDefined();
+        expect(screen.queryByTestId('content-tab-panel-text')).toBeNull();
+        expect(screen.getByTestId('file-content-formatter').textContent).toBe('formatted:hello');
+        expect(screen.queryByTestId('file-content-text')).toBeNull();
+
+        // Back to the Text tab → text panel again
+        fireEvent.click(screen.getByTestId('content-tab-text'));
+        expect(screen.getByTestId('content-tab-panel-text')).toBeDefined();
+        expect(screen.getByTestId('file-content-text').textContent).toBe('hello');
+        expect(screen.queryByTestId('file-content-formatter')).toBeNull();
+    });
+
+    it('shows only the single-plugin render (no tabs) for files the extra plugin skips', async () => {
+        render(<FormatterDashboard plugins={[...defaultPlugins, formatterDemoPlugin]} />);
+
+        // Image file → only the image plugin contributes (formatter-demo
+        // yields null for non-text kinds) → direct render, no tabs
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [new File(['fake-png-bytes'], 'logo.png', { type: 'image/png' })],
+            },
+        });
+
+        await waitFor(() => {
+            expect(screen.getByTestId('file-content-image')).toBeDefined();
+        });
+        expect(screen.queryByTestId('content-tabs')).toBeNull();
     });
 });

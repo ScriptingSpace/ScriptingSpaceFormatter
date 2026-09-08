@@ -7,7 +7,7 @@ import {
     buildFilesPdf,
     downloadFilesPdf,
 } from './exportFilesToPdf';
-import type { FormatterFile } from './fileStore';
+import type { FormatterFile } from '../../functions';
 
 // Geometry constants mirrored from exportFilesToPdf.ts (kept in sync via the
 // page-count assertions below — if the module changes pagination, these break

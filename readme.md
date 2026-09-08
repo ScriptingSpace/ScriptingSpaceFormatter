@@ -20,8 +20,9 @@ into a sidebar. The left content pane is reserved for future formatter output.
 
 ## Usage
 
-Drop files anywhere on the page — each file is read as plain text and added to
-the sidebar (`readTextFile` → `openFile`). Re-dropping a file with the same
+Drop files anywhere on the page — the file-reader plugin reads each file
+(kind detection + text/data-URL strategy) and opens it in the sidebar.
+Re-dropping a file with the same
 name replaces its sidebar entry instead of duplicating it. Clicking a sidebar
 entry selects it; its × removes it (falling back to the most recent remaining
 entry).
@@ -70,10 +71,32 @@ any bundler that resolves the ESM output).
 
 ## Structure
 
-- `src/functions/` — file session store (`localContextStore`) + file reader
-- `src/components/` — `FileSidebar` (right column) and its provider-wired variant
-- `src/dashboards/` — `FormatterDashboard` (header / content / footer shell,
-  global drag & drop handling)
+Everything the dashboard shows is a plugin. `FormatterDashboard` executes a
+plugin sequence (`defaultPlugins`) and exposes three target areas to every
+plugin — **header slot**, **sidebar slot** and the **content area** — plus two
+callback hooks: files dropped on the page (`onFilesDropped`) and a sidebar
+file selected (`renderFile`).
+
+- `src/plugins/core/` — `DashboardPlugin` contract (slots + hooks)
+- `src/plugins/fileReader/` — file type reader plugin (drop hook: classifies
+  and reads each dropped file → `readTextFile`)
+- `src/plugins/header/` — title + subtitle block in the header slot
+- `src/plugins/exportPdf/` — Export PDF button in the header slot (+ pdf-lib
+  export in `exportFilesToPdf.ts`)
+- `src/plugins/sidebar/` — file sidebar in the sidebar slot
+- `src/plugins/content/` — text / image / video / binary renderer plugins
+  (each hooks `renderFile` for its own file kind)
+- `src/plugins/index.ts` — `defaultPlugins` execution sequence
+- `src/functions/` — shared file session store (`localContextStore`), the
+  context every plugin reads and mutates through
+- `src/dashboards/` — `FormatterDashboard` (plugin executor: header /
+  sidebar / content areas, global drag & drop, content tabs)
+
+When a sidebar file is selected, the dashboard runs every plugin hooked into
+`renderFile`. A plugin rendering its own file kind (image plugin → image,
+text plugin → text) renders directly; if **two or more plugins** contribute
+for the same file, the content area switches to **tabs** — one tab per
+contributing plugin, in sequence order.
 
 ## Deployment
 

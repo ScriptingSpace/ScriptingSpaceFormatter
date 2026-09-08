@@ -11,8 +11,9 @@ export type FormatterFileKind = 'image' | 'video' | 'text' | 'binary';
 // A file accepted by the dashboard. `name` doubles as the stable sidebar
 // entry id: dropping a file whose name matches an existing entry replaces
 // that entry's content (re-load); a new name appends a new entry.
-// `kind` is detected by readTextFile (src/functions/readTextFile.ts) from the
-// browser File's MIME type / extension (with a NUL-byte sniff fallback).
+// `kind` is detected by the file-reader plugin (src/plugins/fileReader/
+// readTextFile.ts) from the browser File's MIME type / extension (with a
+// NUL-byte sniff fallback).
 export type FormatterFile = {
     name: string;
     kind: FormatterFileKind;

@@ -1,17 +1,17 @@
 import React from 'react';
 import { styledComponent, useStateHook } from '@presource/react';
-import { formatterFileStore } from '../functions';
-import type { FormatterFile } from '../functions';
+import { formatterFileStore } from '../../functions';
+import type { FormatterFile } from '../../functions';
 
 // ─── Sidebar chrome ──────────────────────────────────────────────────────────
 
-// LEFT column of the dashboard (first flex child of ContentArea in
-// dashboards/FormatterDashboard.tsx). Fixed width so the content pane to its
-// right keeps the remaining space. The list scrolls internally — the page
-// itself never scrolls (viewport lock in src/app.css). The divider sits on
-// the RIGHT edge of the sidebar since the content lives to its right.
+// LEFT column content assigned by SidebarPlugin into the dashboard's sidebar
+// slot (dashboards/FormatterDashboard.tsx provides the 280px column geometry;
+// this root fills it 100%). The list scrolls internally — the page itself
+// never scrolls (viewport lock in src/app.css). The divider sits on the
+// RIGHT edge of the sidebar since the content lives to its right.
 const SidebarRoot = styledComponent('aside', {
-    width: 280,
+    width: '100%',
     flexShrink: 0,
     display: 'flex',
     flexDirection: 'column',

@@ -1,10 +1,10 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { arrayEachAsync } from '@presource/core';
-import type { FormatterFile } from './fileStore';
+import type { FormatterFile } from '../../functions';
 
 // ─── Page geometry (A4 portrait, points) ─────────────────────────────────────
-// Cross-reference: used by buildFilesPdf below; the dashboard button lives in
-// dashboards/FormatterDashboard.tsx (HeaderBar, right side).
+// Cross-reference: used by buildFilesPdf below; the export button lives in
+// the ExportPdfPlugin header slot (plugins/exportPdf/ExportPdfPlugin.tsx).
 // ZERO margins by design — content renders edge to edge, no file-name title.
 const PAGE_WIDTH = 595.28;
 const PAGE_HEIGHT = 841.89;

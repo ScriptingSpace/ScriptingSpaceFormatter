@@ -2,7 +2,7 @@ import React from 'react';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { describe, it, expect, afterEach } from 'vitest';
 import { FileSidebar } from './FileSidebar';
-import type { FormatterFile } from '../functions';
+import type { FormatterFile } from '../../functions';
 
 afterEach(() => {
     cleanup();
