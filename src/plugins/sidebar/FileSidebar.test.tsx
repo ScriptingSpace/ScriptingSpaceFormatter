@@ -14,12 +14,13 @@ const FILES: FormatterFile[] = [
     { name: 'b.txt', kind: 'text', mime: 'text/plain', content: 'bbb' },
 ];
 
-// Spy helpers recording select/close/move invocations from the component
+// Spy helpers recording select/deselect/close/move invocations from the component
 const makeSpies = () => {
     const calls: string[] = [];
     return {
         calls,
         onSelect: (name: string) => calls.push(`select:${name}`),
+        onDeselect: () => calls.push('deselect'),
         onClose: (name: string) => calls.push(`close:${name}`),
         onMove: (from: string, toIndex: number) => calls.push(`move:${from}->${toIndex}`),
     };
@@ -80,6 +81,66 @@ describe('FileSidebar', () => {
         fireEvent.click(screen.getByTestId('sidebar-file-b.txt'));
 
         expect(spies.calls).toEqual(['select:b.txt']);
+    });
+
+    it('deselects all entries when the sidebar background is clicked', () => {
+        const spies = makeSpies();
+        render(
+            <FileSidebar
+                files={FILES}
+                activeFileId="a.txt"
+                onSelect={spies.onSelect}
+                onDeselect={spies.onDeselect}
+                onClose={spies.onClose}
+                onMove={spies.onMove}
+            />,
+        );
+
+        // Click the list area itself (padding below the entries) — NOT an
+        // entry → the sidebar root fires onDeselect exactly once
+        fireEvent.click(screen.getByTestId('file-list'));
+
+        expect(spies.calls).toEqual(['deselect']);
+    });
+
+    it('does not deselect when an entry is clicked (selection wins over bubbling)', () => {
+        const spies = makeSpies();
+        render(
+            <FileSidebar
+                files={FILES}
+                activeFileId="a.txt"
+                onSelect={spies.onSelect}
+                onDeselect={spies.onDeselect}
+                onClose={spies.onClose}
+                onMove={spies.onMove}
+            />,
+        );
+
+        // The entry click stops propagation — the background deselect handler
+        // on SidebarRoot must never fire
+        fireEvent.click(screen.getByTestId('sidebar-file-a.txt'));
+
+        expect(spies.calls).toEqual(['select:a.txt']);
+    });
+
+    it('does not deselect when an entry close button is clicked', () => {
+        const spies = makeSpies();
+        render(
+            <FileSidebar
+                files={FILES}
+                activeFileId="a.txt"
+                onSelect={spies.onSelect}
+                onDeselect={spies.onDeselect}
+                onClose={spies.onClose}
+                onMove={spies.onMove}
+            />,
+        );
+
+        // × already stops propagation for select; it must also suppress the
+        // background deselect — only the close fires
+        fireEvent.click(screen.getByTestId('remove-file-b.txt'));
+
+        expect(spies.calls).toEqual(['close:b.txt']);
     });
 
     it('removes a file via its close button without selecting it', () => {

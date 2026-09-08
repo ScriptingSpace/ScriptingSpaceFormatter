@@ -226,6 +226,46 @@ describe('FormatterDashboard', () => {
         );
     });
 
+    it('deselects every entry when clicking the sidebar outside of any entry', async () => {
+        render(<FormatterDashboard />);
+
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [
+                    new File(['alpha text'], 'alpha.txt', { type: 'text/plain' }),
+                    new File(['beta text'], 'beta.txt', { type: 'text/plain' }),
+                ],
+            },
+        });
+        // Latest drop (beta) is active → its content renders
+        await waitFor(() => {
+            expect(screen.getByTestId('file-content-text').textContent).toBe('beta text');
+        });
+
+        // Click the list background (below the entries) — not an entry →
+        // the whole selection clears
+        fireEvent.click(screen.getByTestId('file-list'));
+
+        expect(screen.getByTestId('sidebar-file-alpha.txt').getAttribute('aria-pressed')).toBe(
+            'false',
+        );
+        expect(screen.getByTestId('sidebar-file-beta.txt').getAttribute('aria-pressed')).toBe(
+            'false',
+        );
+        // No active file → the placeholder returns in the content pane
+        expect(screen.getByTestId('content-placeholder').textContent).toBe(
+            'Formatter content will appear here.',
+        );
+        expect(screen.queryByTestId('file-content-text')).toBeNull();
+
+        // The session stays usable — clicking an entry re-selects it
+        fireEvent.click(screen.getByTestId('sidebar-file-alpha.txt'));
+        expect(screen.getByTestId('sidebar-file-alpha.txt').getAttribute('aria-pressed')).toBe(
+            'true',
+        );
+        expect(screen.getByTestId('file-content-text').textContent).toBe('alpha text');
+    });
+
     it('renders the dropped file content in the content pane when it is selected', async () => {
         render(<FormatterDashboard />);
 

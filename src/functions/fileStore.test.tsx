@@ -148,6 +148,11 @@ describe('fileStore', () => {
                 />
                 <button
                     type="button"
+                    data-testid="deselect"
+                    onClick={() => store.deselectFiles()}
+                />
+                <button
+                    type="button"
                     data-testid="edit-active"
                     onClick={() => {
                         const active = store.files.find(
@@ -184,6 +189,7 @@ describe('fileStore', () => {
                 activeFileId(next.name);
             },
             selectFile: (name: string) => activeFileId(name),
+            deselectFiles: () => activeFileId(null),
             updateContent: (name: string, content: string) => {
                 files(files().map((entry) => (entry.name === name ? { ...entry, content } : entry)));
             },
@@ -239,6 +245,21 @@ describe('fileStore', () => {
         fireEvent.click(screen.getByTestId('open-b'));
         fireEvent.click(screen.getByTestId('select-a'));
 
+        expect(sessionSummary()).toBe('a.txt,b.txt|a.txt');
+    });
+
+    it('deselectFiles clears the active entry without touching the file list', () => {
+        render(<Harness />);
+
+        fireEvent.click(screen.getByTestId('open-a'));
+        fireEvent.click(screen.getByTestId('open-b'));
+        fireEvent.click(screen.getByTestId('deselect'));
+
+        // Both entries remain; nothing is active anymore
+        expect(sessionSummary()).toBe('a.txt,b.txt|none');
+
+        // The session stays usable — selecting again works after a deselect
+        fireEvent.click(screen.getByTestId('select-a'));
         expect(sessionSummary()).toBe('a.txt,b.txt|a.txt');
     });
 

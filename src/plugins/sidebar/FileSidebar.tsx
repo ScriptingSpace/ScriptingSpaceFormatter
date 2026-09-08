@@ -134,6 +134,10 @@ export type FileSidebarProps = {
     activeFileId: string | null;
     // Fired when an entry body is clicked — selects that file
     onSelect: (name: string) => void;
+    // Fired when the sidebar background (anything that is NOT an entry) is
+    // clicked — deselects every entry. Optional: consumers that do not
+    // support a "nothing selected" state may omit it.
+    onDeselect?: () => void;
     // Fired when an entry's × is clicked — removes that file from the sidebar
     onClose: (name: string) => void;
     // Fired when a dragged entry is dropped between others — reorders the
@@ -150,7 +154,7 @@ export type FileSidebarProps = {
 // pointer's position relative to the hovered entry's vertical midpoint picks
 // the insertion slot, a DropLine marks it between the two entries, and
 // dropping fires onMove(fromName, toIndex).
-export const FileSidebar = ({ files, activeFileId, onSelect, onClose, onMove }: FileSidebarProps) => {
+export const FileSidebar = ({ files, activeFileId, onSelect, onDeselect, onClose, onMove }: FileSidebarProps) => {
     // HTML5 drag state — the entry being dragged (a file name) and the
     // insertion index (0..files.length) where the DropLine currently sits.
     // insertAt is null when no valid drop position is hovered.
@@ -219,8 +223,16 @@ export const FileSidebar = ({ files, activeFileId, onSelect, onClose, onMove }: 
         if (!next || !event.currentTarget.contains(next)) insertAt(null);
     };
 
+    // Background click → deselect everything. Fires from the sidebar ROOT so
+    // clicks on the header, list padding and empty area all count as
+    // "elsewhere"; entry clicks must stopPropagation (below) or they would
+    // select-then-immediately-deselect via bubbling.
+    const handleBackgroundClick = () => {
+        onDeselect?.();
+    };
+
     return (
-        <SidebarRoot data-testid="file-sidebar">
+        <SidebarRoot data-testid="file-sidebar" onClick={handleBackgroundClick}>
             <SidebarHeader>
                 Files{files.length > 0 ? ` (${files.length})` : ''}
             </SidebarHeader>
@@ -238,7 +250,13 @@ export const FileSidebar = ({ files, activeFileId, onSelect, onClose, onMove }: 
                                 <FileEntry
                                     active={entry.name === activeFileId}
                                     dragging={dragName() === entry.name}
-                                    onClick={() => onSelect(entry.name)}
+                                    // stopPropagation keeps the bubbling click
+                                    // from reaching SidebarRoot's deselect
+                                    // handler — selecting must not deselect
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        onSelect(entry.name);
+                                    }}
                                     onKeyDown={handleKeyDown(entry.name)}
                                     role="button"
                                     tabIndex={0}
@@ -284,6 +302,7 @@ export const ConnectedFileSidebar = () => {
             files={store.files}
             activeFileId={store.activeFileId}
             onSelect={store.selectFile}
+            onDeselect={store.deselectFiles}
             onClose={store.closeFile}
             onMove={store.moveFile}
         />
