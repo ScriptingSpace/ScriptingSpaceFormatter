@@ -9,6 +9,9 @@ lib/
 .vite/
 .vite-temp/
 
+# Turbo local caches and run logs (matches the root repo's .turbo ignore)
+.turbo
+
 # Environment / OS noise
 .env
 .DS_Store
