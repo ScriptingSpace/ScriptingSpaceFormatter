@@ -82,10 +82,17 @@ file selected (`renderFile`).
   and reads each dropped file → `readTextFile`)
 - `src/plugins/header/` — title + subtitle block in the header slot
 - `src/plugins/exportPdf/` — Export PDF button in the header slot (+ pdf-lib
-  export in `exportFilesToPdf.ts`)
+  export in `exportFilesToPdf.ts`; dropped PDF files are embedded by copying
+  their own pages)
 - `src/plugins/sidebar/` — file sidebar in the sidebar slot
 - `src/plugins/content/` — text / image / video / binary renderer plugins
   (each hooks `renderFile` for its own file kind)
+- `src/plugins/pdfReader/` — full PDF reader plugin (pdf.js): continuous
+  scroll with lazy canvas rendering, page navigation + jump box, zoom with
+  fit-width, quarter-turn rotation, full-text search with match navigation
+  and a download button (`PdfViewer.tsx`; the `pdfjs.ts` module is the single
+  pdf.js access layer — the worker is resolved lazily via a Vite `?url`
+  import, with a main-thread fake-worker fallback)
 - `src/plugins/index.ts` — `defaultPlugins` execution sequence
 - `src/functions/` — shared file session store (`localContextStore`), the
   context every plugin reads and mutates through
@@ -94,9 +101,9 @@ file selected (`renderFile`).
 
 When a sidebar file is selected, the dashboard runs every plugin hooked into
 `renderFile`. A plugin rendering its own file kind (image plugin → image,
-text plugin → text) renders directly; if **two or more plugins** contribute
-for the same file, the content area switches to **tabs** — one tab per
-contributing plugin, in sequence order.
+text plugin → text, PDF plugin → the pdf.js reader) renders directly; if
+**two or more plugins** contribute for the same file, the content area
+switches to **tabs** — one tab per contributing plugin, in sequence order.
 
 ## Deployment
 

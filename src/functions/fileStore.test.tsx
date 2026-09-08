@@ -56,6 +56,28 @@ describe('readTextFile', () => {
         expect(result.content.startsWith('data:video/mp4;base64,')).toBe(true);
     });
 
+    it('classifies application/pdf as kind pdf and reads it as a data URL', async () => {
+        const file = new File(['fake-pdf-bytes'], 'doc.pdf', { type: 'application/pdf' });
+
+        // btoa('fake-pdf-bytes') — exact base64 payload of the fixture bytes
+        await expect(readTextFile(file)).resolves.toEqual({
+            name: 'doc.pdf',
+            kind: 'pdf',
+            mime: 'application/pdf',
+            content: 'data:application/pdf;base64,ZmFrZS1wZGYtYnl0ZXM=',
+        });
+    });
+
+    it('falls back to the .pdf extension when the MIME type is empty', async () => {
+        const file = new File(['%PDF-1.4 fake'], 'paper.pdf', { type: '' });
+
+        const result = await readTextFile(file);
+        expect(result.kind).toBe('pdf');
+        expect(result.mime).toBe('');
+        // PDFs are read as data URLs even when the browser sent no MIME type
+        expect(result.content.startsWith('data:application/octet-stream;base64,')).toBe(true);
+    });
+
     it('classifies unknown binary MIME as kind binary', async () => {
         const file = new File(['\u0000\u0001\u0002'], 'app.exe', {
             type: 'application/octet-stream',

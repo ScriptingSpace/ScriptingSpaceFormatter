@@ -1,9 +1,35 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { FormatterDashboard } from './FormatterDashboard';
 import { defaultPlugins } from '../plugins';
 import type { DashboardPlugin } from '../plugins';
+
+// ─── pdf.js mock (via the LOCAL access layer — see PdfViewer.test.tsx for why
+// mocking 'pdfjs-dist' directly does not work through the re-export) ─────────
+// One page, 612×792, static text — enough to drive the PDF reader end-to-end.
+const pdfjs = vi.hoisted(() => {
+    const fakePage = {
+        getViewport: ({ scale }: { scale: number }) => ({
+            width: 612 * scale,
+            height: 792 * scale,
+            scale,
+        }),
+        render: () => ({ promise: Promise.resolve(), cancel: () => {} }),
+        getTextContent: async () => ({ items: [{ str: 'dropped pdf text' }] }),
+    };
+    const fakeDoc = {
+        numPages: 2,
+        getPage: async (pageNumber: number) => fakePage,
+        destroy: async () => undefined,
+    };
+    return { getDocument: vi.fn(() => ({ promise: Promise.resolve(fakeDoc) })) };
+});
+vi.mock('../plugins/pdfReader/pdfjs', () => ({
+    getDocument: pdfjs.getDocument,
+    GlobalWorkerOptions: { workerSrc: '' },
+    configurePdfWorker: async () => undefined,
+}));
 
 // Extra content plugin used by the tabs tests — renders for the SAME text
 // files as the built-in text plugin, forcing the two-plugin (tabs) path.
@@ -258,8 +284,7 @@ describe('FormatterDashboard', () => {
         expect(screen.queryByTestId('content-placeholder')).toBeNull();
     });
 
-    it('renders a dropped video in a video player with controls', async () => {
-        render(<FormatterDashboard />);
+    it('renders a dropped video in a video player with controls', async () => {        render(<FormatterDashboard />);
 
         fireEvent.drop(screen.getByTestId('dashboard-root'), {
             dataTransfer: {
@@ -300,6 +325,31 @@ describe('FormatterDashboard', () => {
         );
         expect(screen.queryByTestId('file-content-text')).toBeNull();
         expect(screen.queryByTestId('content-placeholder')).toBeNull();
+    });
+
+    it('renders a dropped PDF with the pdf reader plugin (pdf.js viewer)', async () => {
+        render(<FormatterDashboard />);
+
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [new File(['%PDF-1.4 fake'], 'doc.pdf', { type: 'application/pdf' })],
+            },
+        });
+
+        // PDF kind → the pdf reader plugin renders its full viewer: page
+        // indicator, page frames and canvases come from the mocked pdf.js
+        await waitFor(() => {
+            expect(screen.getByTestId('pdf-viewer')).toBeDefined();
+        });
+        expect(screen.getByTestId('pdf-page-indicator').textContent).toBe('1 / 2');
+        expect(screen.getByTestId('pdf-page-1')).toBeDefined();
+        expect(screen.getByTestId('pdf-page-2')).toBeDefined();
+        expect(screen.queryByTestId('file-content-binary')).toBeNull();
+        expect(screen.queryByTestId('content-placeholder')).toBeNull();
+        // The decoded data-URL bytes reached pdf.js getDocument
+        await waitFor(() => {
+            expect(pdfjs.getDocument).toHaveBeenCalled();
+        });
     });
 
     it('swaps render mode when clicking entries of different kinds', async () => {

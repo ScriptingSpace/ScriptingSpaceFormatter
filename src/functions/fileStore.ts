@@ -5,8 +5,10 @@ import { localContextStore } from '@presource/react';
 // - 'image'  → rendered in an <img> (content is a data URL)
 // - 'video'  → rendered in a <video controls> player (content is a data URL)
 // - 'text'   → rendered as plain text (content is decoded text)
+// - 'pdf'    → rendered by the PDF reader plugin (plugins/pdfReader) —
+//              content is a data URL decoded and fed to pdf.js
 // - 'binary' → NOT rendered; a notice is shown instead
-export type FormatterFileKind = 'image' | 'video' | 'text' | 'binary';
+export type FormatterFileKind = 'image' | 'video' | 'text' | 'pdf' | 'binary';
 
 // A file accepted by the dashboard. `name` doubles as the stable sidebar
 // entry id: dropping a file whose name matches an existing entry replaces

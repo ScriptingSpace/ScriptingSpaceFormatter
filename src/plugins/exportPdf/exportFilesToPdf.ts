@@ -1,5 +1,5 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-import { arrayEachAsync } from '@presource/core';
+import { arrayEach, arrayEachAsync } from '@presource/core';
 import type { FormatterFile } from '../../functions';
 
 // ─── Page geometry (A4 portrait, points) ─────────────────────────────────────
@@ -100,12 +100,44 @@ const drawBodyLines = (
 // Renders one sidebar file into the PDF document. Each file starts on a NEW
 // page (first page reuses the blank page created with the document):
 // - text   → wrapped Courier body, edge to edge, paginating when lines overflow
+// - pdf    → the dropped PDF's OWN pages are copied into the export (pdf-lib
+//            copyPages) — original page geometry is preserved, no A4 reflow
 // - image  → PNG/JPEG scaled to FILL the entire page (cover: aspect ratio is
 //            kept, the image is scaled so BOTH axes reach/past the page edges,
 //            centered so any overflow clips evenly off both sides); other
 //            image formats (svg/webp/…) get an "unsupported" note page
 // - video / binary → a short note page (raw content is never dumped)
 const appendFile = async (doc: PDFDocument, file: FormatterFile, bodyFont: BodyFont) => {
+    if (file.kind === 'pdf') {
+        // PDF files embed natively — load the source document and copy every
+        // page into the export. This branch must NOT pre-create the shared
+        // blank A4 page (copied pages append directly, keeping their own
+        // geometry). Corrupt/encrypted sources degrade to a note page instead
+        // of throwing mid-export; ignoreEncryption lets the copy succeed for
+        // owner-password-protected files that allow copying.
+        try {
+            const bytes = decodeDataUrl(file.content);
+            const source = await PDFDocument.load(bytes, { ignoreEncryption: true });
+            const copied = await doc.copyPages(source, source.getPageIndices());
+            // Block body on purpose — arrayEach SHORT-CIRCUITS when the
+            // callback returns a non-undefined value, and addPage() returns
+            // the added page (an expression body would stop after page 1)
+            arrayEach(copied, ({ value }) => {
+                doc.addPage(value);
+            });
+        } catch {
+            const note = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+            drawBodyLines(
+                note,
+                bodyFont,
+                [`${file.name}: unreadable PDF (not embedded)`],
+                BODY_TOP,
+                MUTED_COLOR,
+            );
+        }
+        return;
+    }
+
     const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
 
     if (file.kind === 'text') {
@@ -156,6 +188,7 @@ const appendFile = async (doc: PDFDocument, file: FormatterFile, bodyFont: BodyF
     }
 
     // video and binary kinds — raw bytes are not representable in a PDF
+    // (pdf files never reach this branch — they are copyPages-embedded above)
     const note =
         file.kind === 'video'
             ? `${file.name}: video file (content not embedded in PDF)`

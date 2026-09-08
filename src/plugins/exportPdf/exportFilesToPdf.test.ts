@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { PDFDocument, PDFArray, PDFRawStream, decodePDFRawStream } from 'pdf-lib';
+import { PDFDocument, PDFArray, PDFRawStream, StandardFonts, decodePDFRawStream } from 'pdf-lib';
 import {
     sanitizeWinAnsiText,
     wrapText,
@@ -27,6 +27,22 @@ const file = (overrides: Partial<FormatterFile>): FormatterFile => ({
     content: '',
     ...overrides,
 });
+
+// Builds a REAL two-page PDF (300×400 and 500×200) via pdf-lib and returns it
+// as a data URL — the exact shape the file-reader plugin stores for kind
+// 'pdf' (readTextFile → readAsDataURL). Used to verify the export embeds
+// dropped PDFs with their original page geometry.
+const twoPagePdfDataUrl = async (): Promise<string> => {
+    const source = await PDFDocument.create();
+    const font = await source.embedFont(StandardFonts.Helvetica);
+    const first = source.addPage([300, 400]);
+    first.drawText('page one', { x: 10, y: 380, size: 12, font });
+    source.addPage([500, 200]);
+    const bytes = await source.save();
+    let binary = '';
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return `data:application/pdf;base64,${btoa(binary)}`;
+};
 
 // Decodes a page's (Flate-compressed) content stream into its operator text.
 // Used to assert exact draw placement: pdf-lib emits the image transform as
@@ -153,6 +169,39 @@ describe('buildFilesPdf', () => {
         doc.getPages().forEach((page) => {
             expect(page.getSize()).toEqual(A4);
         });
+    });
+
+    it('embeds a dropped PDF file by copying its own pages, preserving their geometry', async () => {
+        const doc = await buildFilesPdf([
+            file({ name: 'a.txt', content: 'alpha' }),
+            file({
+                name: 'source.pdf',
+                kind: 'pdf',
+                mime: 'application/pdf',
+                content: await twoPagePdfDataUrl(),
+            }),
+        ]);
+
+        // 1 A4 text page + the PDF's OWN two pages — no blank A4 filler page
+        expect(doc.getPageCount()).toBe(3);
+        // Copied pages keep their source geometry (no A4 reflow)
+        expect(doc.getPage(1).getSize()).toEqual({ width: 300, height: 400 });
+        expect(doc.getPage(2).getSize()).toEqual({ width: 500, height: 200 });
+    });
+
+    it('degrades an unreadable PDF file to a single note page', async () => {
+        const doc = await buildFilesPdf([
+            file({
+                name: 'broken.pdf',
+                kind: 'pdf',
+                mime: 'application/pdf',
+                // Valid base64 (bytes 0,0,0) but not a parseable PDF
+                content: 'data:application/pdf;base64,AAAA',
+            }),
+        ]);
+
+        expect(doc.getPageCount()).toBe(1);
+        expect(doc.getPage(0).getSize()).toEqual(A4);
     });
 
     it('scales images edge to edge (cover fit) with no white border', async () => {
