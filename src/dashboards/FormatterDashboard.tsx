@@ -207,6 +207,9 @@ export const FormatterDashboard = React.memo(
                 activeFileId(next.name);
             },
             selectFile: (name: string) => activeFileId(name),
+            // Sidebar background click: clear the selection entirely — the
+            // content pane falls back to its placeholder (no active file)
+            deselectFiles: () => activeFileId(null),
             updateContent: (name: string, content: string) => {
                 files(files().map((entry) => (entry.name === name ? { ...entry, content } : entry)));
             },
