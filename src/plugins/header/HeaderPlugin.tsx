@@ -2,8 +2,8 @@ import { styledComponent } from '@presource/react';
 import type { DashboardPlugin } from '../core';
 
 // Header identity block — assigns the dashboard title + subtitle into the
-// header slot. flex:1 pushes any later header-slot assignment (the export
-// button from plugins/exportPdf) to the RIGHT edge of the header row.
+// header slot. flex:1 pushes the shared header dropdown (rendered by the
+// dashboard AFTER all header-slot nodes) to the RIGHT edge of the header row.
 const HeaderIdentity = styledComponent('div', {
     display: 'flex',
     flexDirection: 'column',

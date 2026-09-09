@@ -93,6 +93,9 @@ file selected (`renderFile`).
   and a download button (`PdfViewer.tsx`; the `pdfjs.ts` module is the single
   pdf.js access layer — the worker is resolved lazily via a Vite `?url`
   import, with a main-thread fake-worker fallback)
+- `src/plugins/compare/` — git-style file comparison plugin (`diffLines.ts`
+  LCS line diff + `FileDiffView.tsx` side-by-side view; hooks the
+  selection-level `renderSelection` hook)
 - `src/plugins/index.ts` — `defaultPlugins` execution sequence
 - `src/functions/` — shared file session store (`localContextStore`), the
   context every plugin reads and mutates through
@@ -104,6 +107,15 @@ When a sidebar file is selected, the dashboard runs every plugin hooked into
 text plugin → text, PDF plugin → the pdf.js reader) renders directly; if
 **two or more plugins** contribute for the same file, the content area
 switches to **tabs** — one tab per contributing plugin, in sequence order.
+
+When **two or more files** are selected, the dashboard additionally runs
+every plugin hooked into `renderSelection`. Each contributing plugin mounts
+an extra tab AFTER the focused file's plugin tabs — the compare plugin uses
+this to add a **Compare** tab showing a git-style side-by-side diff of the
+FIRST-selected file (left, `−` removed lines) against the SECOND-selected
+file (right, `+` added lines). The tab disappears when the selection drops
+below two files, and no tab is produced when the selection contains a
+non-text file.
 
 ## Deployment
 

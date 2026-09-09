@@ -1,9 +1,9 @@
 import React from 'react';
 import { arrayEach } from '@presource/core';
-import { styledComponent, useStateHook } from '@presource/react';
+import { styledComponent, useStateHook, useReferenceHook } from '@presource/react';
 import { formatterFileStore, FormatterFileProvider } from '../functions';
 import { defaultPlugins } from '../plugins';
-import type { DashboardPlugin } from '../plugins';
+import type { DashboardPlugin, DashboardMenuItem } from '../plugins';
 import type { FormatterFile } from '../functions';
 
 // ─── Styled shell ────────────────────────────────────────────────────────────
@@ -85,6 +85,99 @@ const ContentPlaceholder = styledComponent('div', {
     color: '#475569',
     textAlign: 'center' as const,
     padding: 32,
+});
+
+// ─── Header dropdown menu ────────────────────────────────────────────────────
+
+// The header's right-side action area: a single dropdown button whose menu
+// aggregates EVERY plugin's `menus` contributions (one row per item, in
+// plugin sequence order). Plugins no longer render standalone header
+// controls — they add items into this menu instead.
+
+// Wrapper for the trigger + panel — `position: relative` anchors the
+// absolutely-positioned panel below the button
+const HeaderMenuArea = styledComponent('div', {
+    position: 'relative' as const,
+    flexShrink: 0,
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'flex-end' as const,
+});
+
+// Dropdown trigger — matches the shell's button styling family
+const HeaderMenuButton = styledComponent('button', {
+    padding: '8px 14px',
+    fontSize: 13,
+    fontWeight: 600,
+    fontFamily: 'inherit',
+    borderRadius: 8,
+    border: '1px solid #3b82f6',
+    background: '#2563eb',
+    color: '#ffffff',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+}) as unknown as React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>>;
+
+// Chevron glyph inside the trigger — rotates 180° while the menu is open
+const HeaderMenuChevron = styledComponent<{ open: boolean }>('span', {
+    fontSize: 10,
+    lineHeight: 1,
+    display: 'inline-block' as const,
+    transform: ({ open }) => (open ? 'rotate(180deg)' : 'rotate(0deg)'),
+    transition: 'transform 150ms ease',
+});
+
+// The dropdown panel — absolutely positioned under the trigger, right-aligned
+// so it never overflows the header's right edge. Rows are stacked vertically.
+const HeaderMenuPanel = styledComponent('div', {
+    position: 'absolute' as const,
+    top: 'calc(100% + 6px)',
+    right: 0,
+    minWidth: 220,
+    background: '#0f172a',
+    border: '1px solid #1e293b',
+    borderRadius: 8,
+    boxShadow: '0 12px 32px rgba(0, 0, 0, 0.45)',
+    padding: 6,
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: 2,
+    zIndex: 10,
+});
+
+// One menu row — a full-width clickable strip; hover raises it slightly.
+// The row itself is a plain <div role="menuitem"> so the ITEM decides its
+// inner layout (label + inline error, etc.). NOTE: styledComponent's input
+// type only accepts React.CSSProperties keys — no nested selectors — so the
+// hover highlight is applied via the row's onMouseOver/onMouseOut handlers
+// driven by a `hovered` prop (cross-reference: presource/react
+// styled-component.tsx PrimaryInput type, line 79).
+const HeaderMenuRow = styledComponent<{ hovered: boolean }>('div', {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '8px 10px',
+    fontSize: 13,
+    borderRadius: 6,
+    color: '#e2e8f0',
+    cursor: 'pointer',
+    userSelect: 'none' as const,
+    background: ({ hovered }) => (hovered ? '#16233b' : 'transparent'),
+});
+
+// Full-width invisible button wrapper INSIDE a row — the actual click
+// target (a real <button> for a11y/testability) stretched over the row
+const HeaderMenuRowButton = styledComponent('button', {
+    all: 'unset' as const,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    width: '100%',
+    cursor: 'pointer',
+    color: 'inherit',
+    font: 'inherit',
 });
 
 // ─── Multi-select file options ───────────────────────────────────────────────
@@ -231,8 +324,95 @@ const FooterInner = styledComponent('div', {
     color: '#64748b',
 });
 
-// ─── Dashboard composition ───────────────────────────────────────────────────
+// ─── Header dropdown menu component ─────────────────────────────────────────
 
+// The header's single dropdown. Aggregates every plugin's `menus` items into
+// one panel (one row per item, in plugin sequence order). Open/close is
+// owned here; items decide per-action whether to close via closeMenu().
+const HeaderMenu = ({ items }: { items: DashboardMenuItem[] }) => {
+    // Open state of the dropdown panel
+    const open = useStateHook(false);
+
+    // Ref for the outside-click dismiss: any pointer-down OUTSIDE the menu
+    // area closes the panel. Document-level listener is armed only while
+    // open so closed-state clicks never fight the opening click.
+    // (styledComponent returns React.FC without ref typing — cast like the
+    // presource knowledge.md ForwardRefExoticComponent pattern.)
+    const areaRef = useReferenceHook<HTMLDivElement | null>(null);
+    const AreaWithRef = HeaderMenuArea as unknown as React.FC<
+        React.HTMLAttributes<HTMLDivElement> & { ref?: React.Ref<HTMLDivElement> }
+    >;
+    React.useEffect(() => {
+        if (!open()) return;
+        const handlePointerDown = (event: MouseEvent) => {
+            const area = areaRef();
+            // Click inside the trigger/panel → leave the menu alone (rows
+            // handle their own clicks; the trigger toggles)
+            if (area && area.contains(event.target as Node)) return;
+            open(false);
+        };
+        document.addEventListener('mousedown', handlePointerDown);
+        return () => document.removeEventListener('mousedown', handlePointerDown);
+    }, [open()]);
+
+    return (
+        <AreaWithRef ref={areaRef} data-testid="header-menu">
+            <HeaderMenuButton
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={open()}
+                onClick={() => open(!open())}
+                data-testid="header-menu-button"
+            >
+                Actions
+                <HeaderMenuChevron open={open()} aria-hidden={true}>
+                    ▼
+                </HeaderMenuChevron>
+            </HeaderMenuButton>
+            {/* Panel mounts ONLY while open — rows (and their store reads)
+                exist in the DOM solely during the open state. Hover tracking
+                lives on the row wrapper (styledComponent has no nested
+                selector support — see the HeaderMenuRow comment). */}
+            {open() ? (
+                <HeaderMenuPanel role="menu" data-testid="header-menu-panel">
+                    {items.map((item) => (
+                        <HeaderMenuRowItem key={item.id} item={item} closeMenu={() => open(false)} />
+                    ))}
+                </HeaderMenuPanel>
+            ) : null}
+        </AreaWithRef>
+    );
+};
+
+// One menu row with its own hover tracking — isolated per row so hovering
+// one row does not re-render the whole menu
+const HeaderMenuRowItem = ({
+    item,
+    closeMenu,
+}: {
+    item: DashboardMenuItem;
+    closeMenu: () => void;
+}) => {
+    // Hover state drives the row highlight (no CSS nested selectors in
+    // styledComponent inputs)
+    const hovered = useStateHook(false);
+    const Row = HeaderMenuRow as unknown as React.FC<
+        { hovered: boolean } & React.HTMLAttributes<HTMLDivElement>
+    >;
+    return (
+        <Row
+            hovered={hovered()}
+            role="menuitem"
+            onMouseOver={() => hovered(true)}
+            onMouseOut={() => hovered(false)}
+            data-testid={`menu-item-${item.id}`}
+        >
+            <item.render closeMenu={closeMenu} />
+        </Row>
+    );
+};
+
+// ─── Dashboard composition ───────────────────────────────────────────────────
 export type FormatterDashboardProps = {
     // Plugin sequence the dashboard executes. Defaults to defaultPlugins —
     // tests and consumers can inject extra plugins to add header/sidebar
@@ -395,13 +575,59 @@ const DashboardShell = ({ plugins }: { plugins: DashboardPlugin[] }) => {
           ? rendered[0].pluginId
           : null;
 
+    // ── Plugin execution: selection hook ──
+    // Fires ONLY when two or more files are selected. Plugins hooked into
+    // renderSelection contribute extra content tabs that mount AFTER the
+    // focused file's plugin tabs (e.g. the compare plugin's "Compare" tab).
+    const selectionContext = {
+        files,
+        activeFileIds,
+        // Resolved exactly like activeFile above — null when the focused
+        // name is stale (no exact single match)
+        focusedFile: activeFile,
+    };
+    const selectionRendered: { pluginId: string; label: string; node: React.ReactNode }[] = [];
+    if (activeFileIds.length >= 2) {
+        arrayEach(plugins, ({ value: plugin }) => {
+            if (!plugin.renderSelection) return;
+            const node = plugin.renderSelection(selectionContext);
+            // null / undefined → the plugin contributes no selection tab
+            if (node !== null && node !== undefined) {
+                selectionRendered.push({
+                    pluginId: plugin.id,
+                    label: plugin.label ?? plugin.id,
+                    node,
+                });
+            }
+        });
+    }
+
+    // Selection-tab fallback: whenever selection-level tabs exist the
+    // visible id resolves against the MERGED tab list (plugin tabs + selection
+    // tabs) — the selected tab stays visible even when it is a selection tab;
+    // stale selections fall back to the FIRST tab (the focused file's first
+    // plugin tab, or the first selection tab when no plugin contributes).
+    const allTabs = rendered.concat(selectionRendered);
+    const visibleSelectionId =
+        selectionRendered.length > 0
+            ? allTabs.some((entry) => entry.pluginId === selectedTab())
+                ? (selectedTab() as string)
+                : allTabs[0].pluginId
+            : visibleId;
+
     // ── Plugin execution: static slots ──
     // Gather header / sidebar slot assignments in plugin sequence order.
     const headerNodes: { pluginId: string; node: React.ReactNode }[] = [];
     const sidebarNodes: { pluginId: string; node: React.ReactNode }[] = [];
+    // Gather header-dropdown menu items in plugin sequence order — every
+    // plugin can contribute rows into the shared dropdown
+    const menuItems: DashboardMenuItem[] = [];
     arrayEach(plugins, ({ value: plugin }) => {
         if (plugin.slots?.header) headerNodes.push({ pluginId: plugin.id, node: plugin.slots.header });
         if (plugin.slots?.sidebar) sidebarNodes.push({ pluginId: plugin.id, node: plugin.slots.sidebar });
+        arrayEach(plugin.menus ?? [], ({ value: item }) => {
+            menuItems.push(item);
+        });
     });
 
     // Global drop: fire every plugin hooked into onFilesDropped, in sequence
@@ -431,11 +657,13 @@ const DashboardShell = ({ plugins }: { plugins: DashboardPlugin[] }) => {
             onDragOver={handleDragOver}
             data-testid="dashboard-root"
         >
-            {/* Header: plugins' header-slot nodes, in sequence order */}
+            {/* Header: plugins' header-slot nodes, in sequence order, then
+                the shared dropdown aggregating every plugin's menu items */}
             <HeaderBar data-testid="dashboard-header">
                 {headerNodes.map(({ pluginId, node }) => (
                     <React.Fragment key={pluginId}>{node}</React.Fragment>
                 ))}
+                <HeaderMenu items={menuItems} />
             </HeaderBar>
             {/* Content area: LEFT column holds the plugins' sidebar slots,
                 RIGHT pane renders the content contributions for the selected
@@ -455,16 +683,23 @@ const DashboardShell = ({ plugins }: { plugins: DashboardPlugin[] }) => {
                         selection order; the FOCUSED (last) file's content
                         fills the panel. Plugin tabs still win when several
                         plugins contribute for the focused file — the tab
-                        layout nests INSIDE the focused file's panel. */}
-                    {rendered.length === 0 && activeFileIds.length === 0 ? (
+                        layout nests INSIDE the focused file's panel.
+                        Selection-level tabs (renderSelection, e.g. the
+                        compare plugin's "Compare" tab) mount AFTER the
+                        focused file's plugin tabs — only while two or more
+                        files are selected. */}
+                    {rendered.length === 0 &&
+                    selectionRendered.length === 0 &&
+                    activeFileIds.length === 0 ? (
                         <ContentPlaceholder data-testid="content-placeholder">
                             Formatter content will appear here.
                         </ContentPlaceholder>
-                    ) : rendered.length === 0 ? (
+                    ) : rendered.length === 0 && selectionRendered.length === 0 ? (
                         // Selection exists but the focused file has no
-                        // contributions (e.g. kind binary with no plugin) →
-                        // keep the pane empty rather than showing the
-                        // "nothing selected" placeholder
+                        // contributions and no selection-level tabs (e.g.
+                        // kind binary with no plugin) → keep the pane empty
+                        // rather than showing the "nothing selected"
+                        // placeholder
                         null
                     ) : activeFileIds.length <= 1 ? (
                         rendered.length === 1 ? (
@@ -518,31 +753,40 @@ const DashboardShell = ({ plugins }: { plugins: DashboardPlugin[] }) => {
                             </FileOptionBar>
                             {/* The focused file's contributions render inside
                                 the panel — with the same single/tabs split as
-                                the single-select view above */}
+                                the single-select view above. Selection-level
+                                contributions (renderSelection, e.g. the
+                                compare plugin) mount as EXTRA tabs AFTER the
+                                focused file's plugin tabs, exactly when two
+                                or more files are selected. */}
                             <FileOptionPanel data-testid={`file-option-panel-${focusedName}`}>
-                                {rendered.length === 1 ? (
-                                    rendered[0].node
-                                ) : (
-                                    <ContentTabs data-testid="content-tabs">
-                                        <TabBar>
-                                            {rendered.map(({ pluginId, label }) => (
-                                                <TabButton
-                                                    key={pluginId}
-                                                    type="button"
-                                                    active={pluginId === visibleId}
-                                                    onClick={() => selectedTab(pluginId)}
-                                                    data-testid={`content-tab-${pluginId}`}
-                                                >
-                                                    {label}
-                                                </TabButton>
-                                            ))}
-                                        </TabBar>
-                                        {/* Only the active plugin's node is mounted */}
-                                        <TabPanel data-testid={`content-tab-panel-${visibleId}`}>
-                                            {rendered.find((entry) => entry.pluginId === visibleId)?.node}
-                                        </TabPanel>
-                                    </ContentTabs>
-                                )}
+                                {rendered.length === 0 && selectionRendered.length === 0
+                                    ? null
+                                    : rendered.length + selectionRendered.length === 1
+                                      ? (rendered[0]?.node ?? selectionRendered[0].node)
+                                      : (
+                                          // Tab list = focused file's plugin tabs
+                                          // (sequence order) followed by the
+                                          // selection tabs (sequence order)
+                                          <ContentTabs data-testid="content-tabs">
+                                              <TabBar>
+                                                  {allTabs.map(({ pluginId, label }) => (
+                                                      <TabButton
+                                                          key={pluginId}
+                                                          type="button"
+                                                          active={pluginId === visibleSelectionId}
+                                                          onClick={() => selectedTab(pluginId)}
+                                                          data-testid={`content-tab-${pluginId}`}
+                                                      >
+                                                          {label}
+                                                      </TabButton>
+                                                  ))}
+                                              </TabBar>
+                                              {/* Only the active tab's node is mounted */}
+                                              <TabPanel data-testid={`content-tab-panel-${visibleSelectionId}`}>
+                                                  {allTabs.find((entry) => entry.pluginId === visibleSelectionId)?.node}
+                                              </TabPanel>
+                                          </ContentTabs>
+                                      )}
                             </FileOptionPanel>
                         </FileOptions>
                     )}

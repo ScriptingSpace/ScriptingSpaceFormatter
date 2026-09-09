@@ -742,24 +742,70 @@ describe('FormatterDashboard', () => {
         });
     });
 
-    it('keeps the Export PDF button ENABLED with an empty sidebar but shows an error on click', () => {
+    // ─── Header dropdown menu (plugin-contributed items) ─────────────────────
+
+    // Opens the shared header dropdown (every export-flow test starts here —
+    // the export action lives INSIDE the dropdown since the dropdown change)
+    const openMenu = () => {
+        fireEvent.click(screen.getByTestId('header-menu-button'));
+        expect(screen.getByTestId('header-menu-panel')).toBeDefined();
+    };
+
+    it('renders the header dropdown with every plugin-contributed menu item', () => {
         render(<FormatterDashboard />);
 
-        const button = screen.getByTestId('export-pdf-button') as HTMLButtonElement;
-        // No files and nothing selected → the button stays clickable and
-        // shows the idle label on the right side of the header
-        expect(button.disabled).toBe(false);
-        expect(button.textContent).toBe('Export PDF');
+        // Trigger is always present; the panel mounts only when open
+        expect(screen.getByTestId('header-menu')).toBeDefined();
+        expect(screen.queryByTestId('header-menu-panel')).toBeNull();
+
+        openMenu();
+
+        // The default sequence contributes exactly one item: the export-pdf
+        // plugin's row (in plugin sequence order)
+        expect(screen.getByTestId('menu-item-export-pdf')).toBeDefined();
+        expect(screen.getByTestId('export-pdf-item').textContent).toBe(
+            'Export selected files as PDF',
+        );
+    });
+
+    it('closes the dropdown on trigger toggle and outside click', () => {
+        render(<FormatterDashboard />);
+
+        openMenu();
+
+        // Toggle: clicking the trigger again closes the panel
+        fireEvent.click(screen.getByTestId('header-menu-button'));
+        expect(screen.queryByTestId('header-menu-panel')).toBeNull();
+
+        // Re-open, then click OUTSIDE the menu area → closes
+        openMenu();
+        fireEvent.mouseDown(document.body);
+        expect(screen.queryByTestId('header-menu-panel')).toBeNull();
+
+        // Re-open, then click INSIDE the menu area (the panel itself) →
+        // stays open
+        openMenu();
+        fireEvent.mouseDown(screen.getByTestId('header-menu-panel'));
+        expect(screen.getByTestId('header-menu-panel')).toBeDefined();
+    });
+
+    it('keeps the Export PDF menu ENABLED with an empty sidebar but shows an error on click', () => {
+        render(<FormatterDashboard />);
+
+        openMenu();
+
         // No error before any click
         expect(screen.queryByTestId('export-pdf-error')).toBeNull();
 
-        // Clicking with an empty session shows the inline error instead of
-        // downloading a blank page
-        fireEvent.click(button);
+        // Clicking the export row with an empty session shows the inline
+        // error INSIDE the menu instead of downloading a blank page; the
+        // menu STAYS OPEN so the error remains visible
+        fireEvent.click(screen.getByTestId('export-pdf-item'));
 
         expect(screen.getByTestId('export-pdf-error').textContent).toBe(
             'No files selected — select files in the sidebar to export.',
         );
+        expect(screen.getByTestId('header-menu-panel')).toBeDefined();
     });
 
     it('shows the export error when files are loaded but NONE are selected', async () => {
@@ -781,7 +827,8 @@ describe('FormatterDashboard', () => {
         // the selection is empty
         fireEvent.click(screen.getByTestId('file-list'));
 
-        fireEvent.click(screen.getByTestId('export-pdf-button'));
+        openMenu();
+        fireEvent.click(screen.getByTestId('export-pdf-item'));
 
         expect(screen.getByTestId('export-pdf-error').textContent).toBe(
             'No files selected — select files in the sidebar to export.',
@@ -800,12 +847,15 @@ describe('FormatterDashboard', () => {
             expect(screen.getByTestId('sidebar-file-alpha.txt')).toBeDefined();
         });
 
-        // Deselect → click export → error appears
+        // Deselect → open menu → click export → error appears
         fireEvent.click(screen.getByTestId('file-list'));
-        fireEvent.click(screen.getByTestId('export-pdf-button'));
+        openMenu();
+        fireEvent.click(screen.getByTestId('export-pdf-item'));
         expect(screen.getByTestId('export-pdf-error')).toBeDefined();
 
-        // Select a file → the error disappears WITHOUT another export click
+        // The menu stays open on error — select a file (clicking a sidebar
+        // entry is OUTSIDE the menu area, which also dismisses the dropdown)
+        // → the error disappears WITHOUT another export click
         fireEvent.click(screen.getByTestId('sidebar-file-alpha.txt'));
         expect(screen.queryByTestId('export-pdf-error')).toBeNull();
     });
@@ -833,7 +883,7 @@ describe('FormatterDashboard', () => {
         return { clicked, exportedBytes };
     };
 
-    it('exports the SELECTED sidebar files into one automatically downloaded PDF on click', async () => {
+    it('exports the SELECTED sidebar files into one automatically downloaded PDF via the menu item', async () => {
         const { clicked, exportedBytes } = setupExportCapture();
 
         render(<FormatterDashboard />);
@@ -858,11 +908,8 @@ describe('FormatterDashboard', () => {
         fireEvent.click(screen.getByTestId('sidebar-file-beta.txt'));
         fireEvent.click(screen.getByTestId('sidebar-file-gamma.txt'));
 
-        // Enabled once at least one file is selected
-        const button = screen.getByTestId('export-pdf-button') as HTMLButtonElement;
-        expect(button.disabled).toBe(false);
-
-        fireEvent.click(button);
+        openMenu();
+        fireEvent.click(screen.getByTestId('export-pdf-item'));
 
         // The export builds one PDF from the SELECTED files only and
         // auto-downloads it
@@ -882,12 +929,9 @@ describe('FormatterDashboard', () => {
         expect(doc.getPage(0).getSize()).toEqual({ width: 595.28, height: 841.89 });
         expect(doc.getPage(1).getSize()).toEqual({ width: 595.28, height: 841.89 });
 
-        // After the async export completes, the button returns to idle
-        await waitFor(() => {
-            expect((screen.getByTestId('export-pdf-button') as HTMLButtonElement).textContent).toBe(
-                'Export PDF',
-            );
-        });
+        // A successful export start CLOSES the dropdown (the action is done;
+        // the export itself continues in the background)
+        expect(screen.queryByTestId('header-menu-panel')).toBeNull();
     });
 
     it('exports NOTHING and shows the error when nothing is selected (no whole-session fallback)', async () => {
@@ -910,16 +954,15 @@ describe('FormatterDashboard', () => {
         // Deselect everything (sidebar background click) → no selection
         fireEvent.click(screen.getByTestId('file-list'));
 
-        const button = screen.getByTestId('export-pdf-button') as HTMLButtonElement;
-        expect(button.disabled).toBe(false);
+        openMenu();
+        fireEvent.click(screen.getByTestId('export-pdf-item'));
 
-        fireEvent.click(button);
-
-        // No download fires; the inline error appears instead
+        // No download fires; the inline error appears inside the open menu
         expect(clicked).toHaveLength(0);
         expect(screen.getByTestId('export-pdf-error').textContent).toBe(
             'No files selected — select files in the sidebar to export.',
         );
+        expect(screen.getByTestId('header-menu-panel')).toBeDefined();
     });
 
     // Minimal dataTransfer stub — jsdom does not implement DataTransfer

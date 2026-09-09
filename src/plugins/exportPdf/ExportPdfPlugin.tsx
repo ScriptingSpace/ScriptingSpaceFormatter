@@ -1,62 +1,43 @@
 import React from 'react';
 import { styledComponent, useStateHook } from '@presource/react';
-import type { DashboardPlugin } from '../core';
+import type { DashboardPlugin, DashboardMenuItemProps } from '../core';
 import { formatterFileStore } from '../../functions';
 import { downloadFilesPdf } from './exportFilesToPdf';
 
-// RIGHT side of the header — triggers the pdf-lib export of the SELECTED
-// sidebar files into one downloaded PDF (exportFilesToPdf.ts). Clicking it
-// with NOTHING selected shows an inline error instead of exporting (there is
-// no whole-session fallback — an unintended blank/full export was worse than
-// an explicit error). Disabled state is prop-driven: the function value
-// receives all non-theme props, including the standard `disabled` button
-// attribute (cross-reference: presource/react styled-component.tsx phase 2 —
-// function values are called with `rest`, which contains HTML attributes).
-const ExportPdfButton = styledComponent<{ disabled: boolean }>(
-    'button',
-    {
-        padding: '8px 14px',
-        fontSize: 13,
-        fontWeight: 600,
-        fontFamily: 'inherit',
-        borderRadius: 8,
-        border: '1px solid #3b82f6',
-        background: ({ disabled }) => (disabled ? '#16233b' : '#2563eb'),
-        color: ({ disabled }) => (disabled ? '#64748b' : '#ffffff'),
-        cursor: ({ disabled }) => (disabled ? 'not-allowed' : 'pointer'),
-        flexShrink: 0,
-    },
-// Cast matches the FileSidebar EntryClose pattern — the element only needs
-// standard button attributes (type/onClick/disabled/data-testid)
-) as unknown as React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>>;
+// ─── Menu item visuals ───────────────────────────────────────────────────────
 
-// Header-right wrapper — holds the inline error message LEFT of the export
-// button so both fit on one row inside the header slot
-const ExportPdfArea = styledComponent('div', {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    flexShrink: 0,
-});
-
-// Inline error text — red on the dark shell so it reads as a failure, not
-// as regular header copy
+// Inline error text inside the menu row — red on the dark panel so it reads
+// as a failure, not as regular menu copy
 const ExportError = styledComponent('span', {
     fontSize: 12,
     fontWeight: 600,
     color: '#f87171',
+    whiteSpace: 'normal' as const,
 });
 
-// Self-contained header control: reads the shared file session itself (it
-// renders inside the FormatterFileProvider) and owns the export-in-progress
-// and error states, so the dashboard shell stays a dumb executor.
-const ExportPdfControl = () => {
+// "Exporting…" in-progress label — replaces the row label while pdf-lib runs
+const ExportBusy = styledComponent('span', {
+    fontSize: 13,
+    fontWeight: 600,
+    color: '#94a3b8',
+});
+
+// ─── EXPORT PDF menu item ────────────────────────────────────────────────────
+
+// One row inside the dashboard's header dropdown (dashboards/
+// FormatterDashboard.tsx — HeaderMenu). Triggers the pdf-lib export of the
+// SELECTED sidebar files into one downloaded PDF (exportFilesToPdf.ts).
+// Clicking it with NOTHING selected shows an inline error INSIDE the menu
+// row instead of exporting (there is no whole-session fallback — an
+// unintended blank/full export was worse than an explicit error). The menu
+// stays open on error and closes on a successful export start.
+const ExportPdfMenuItem = ({ closeMenu }: DashboardMenuItemProps) => {
     // Capture the shared store during render — calling the accessor inside
     // an event handler would be an invalid hook call
     const store = formatterFileStore();
 
     // True while the pdf-lib export is running — guards against double
-    // clicks and swaps the button label to an in-progress state
+    // clicks and swaps the row label to an in-progress state
     const exporting = useStateHook(false);
     // Last validation error message (null = no error). Displayed ONLY while
     // the selection is still empty — the moment the user selects a file the
@@ -75,40 +56,43 @@ const ExportPdfControl = () => {
             .filter((entry): entry is (typeof store.files)[number] => Boolean(entry));
         if (selected.length === 0) {
             // Covers both "no files at all" and "files loaded but none
-            // selected" — the fix targets the selected files only
+            // selected" — the export targets the selected files only
             error('No files selected — select files in the sidebar to export.');
+            // Keep the menu open so the inline error stays visible
             return;
         }
         error(null);
         exporting(true);
+        // Close the dropdown as soon as the download is triggered — the
+        // action succeeded, the menu's job is done. The export itself
+        // continues in the background.
+        closeMenu();
         downloadFilesPdf(selected).finally(() => exporting(false));
     };
 
+    // Error renders only while the selection is still empty — selecting a
+    // file clears it automatically
+    if (error() !== null && store.activeFileIds.length === 0) {
+        return <ExportError data-testid="export-pdf-error">{error()}</ExportError>;
+    }
+
     return (
-        <ExportPdfArea>
-            {/* Error renders only while the selection is still empty —
-                selecting a file clears it automatically */}
-            {error() !== null && store.activeFileIds.length === 0 ? (
-                <ExportError data-testid="export-pdf-error">{error()}</ExportError>
-            ) : null}
-            <ExportPdfButton
-                type="button"
-                onClick={handleExportPdf}
-                disabled={exporting()}
-                data-testid="export-pdf-button"
-            >
-                {exporting() ? 'Exporting…' : 'Export PDF'}
-            </ExportPdfButton>
-        </ExportPdfArea>
+        <ExportBusy data-testid="export-pdf-item" onClick={handleExportPdf}>
+            {exporting() ? 'Exporting…' : 'Export selected files as PDF'}
+        </ExportBusy>
     );
 };
 
-// EXPORT PDF PLUGIN — assigns the Export PDF action button into the header
-// slot. It renders no file content (no renderFile), so it never contributes
-// a content tab.
+// EXPORT PDF PLUGIN — contributes ONE item ("Export selected files as PDF")
+// into the dashboard's header dropdown. It renders no file content (no
+// renderFile), so it never contributes a content tab.
 export const exportPdfPlugin: DashboardPlugin = {
     id: 'export-pdf',
-    slots: {
-        header: <ExportPdfControl />,
-    },
+    menus: [
+        {
+            id: 'export-pdf',
+            label: 'Export selected files as PDF',
+            render: ExportPdfMenuItem,
+        },
+    ],
 };

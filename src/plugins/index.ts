@@ -5,6 +5,7 @@ export * from './exportPdf';
 export * from './sidebar';
 export * from './content';
 export * from './pdfReader';
+export * from './compare';
 import { fileReaderPlugin } from './fileReader';
 import { headerPlugin } from './header';
 import { exportPdfPlugin } from './exportPdf';
@@ -14,16 +15,21 @@ import { imagePlugin } from './content/ImagePlugin';
 import { videoPlugin } from './content/VideoPlugin';
 import { pdfReaderPlugin } from './pdfReader';
 import { binaryPlugin } from './content/BinaryPlugin';
+import { comparePlugin } from './compare';
 import type { DashboardPlugin } from './core';
 
 // Default plugin sequence — the order IS the execution order:
 // 1. drop hook runs fileReader first (files enter the session)
-// 2. header slot renders the identity block, then the export button (flex:1
-//    on the identity block pushes the button to the right edge)
+// 2. header slot renders the identity block; the header dropdown (rendered
+//    by the dashboard AFTER the header-slot nodes) aggregates every plugin's
+//    `menus` items — export-pdf contributes its export row there
 // 3. sidebar slot renders the file list
 // 4. renderFile hooks run text → image → video → pdf → binary; exactly one
 //    kind matches per file, so the default sequence renders directly — tabs
 //    only appear when a custom plugin also contributes for the same file.
+// 5. renderSelection hooks run last (compare) — the compare tab mounts AFTER
+//    the focused file's plugin tabs, exactly when two or more files are
+//    selected.
 export const defaultPlugins: DashboardPlugin[] = [
     fileReaderPlugin,
     headerPlugin,
@@ -34,4 +40,5 @@ export const defaultPlugins: DashboardPlugin[] = [
     videoPlugin,
     pdfReaderPlugin,
     binaryPlugin,
+    comparePlugin,
 ];
