@@ -96,6 +96,13 @@ file selected (`renderFile`).
 - `src/plugins/compare/` — git-style file comparison plugin (`diffLines.ts`
   LCS line diff + `FileDiffView.tsx` side-by-side view; hooks the
   selection-level `renderSelection` hook)
+- `src/plugins/yaml/` — YAML / OpenAPI plugin (`detectYamlDocument.ts`
+  content-based classification via the `yaml` package + `YamlPlugin.tsx`):
+  an OpenAPI 3.x or Swagger 2.0 document (YAML **or** JSON — JSON is a YAML
+  subset, detected by CONTENT, not extension) renders a formatted spec
+  summary tab (info, servers, paths with method pills); a broken `.yaml` /
+  `.yml` file renders a parse-error tab with line/column positions; plain
+  valid YAML contributes no tab (the text plugin renders it raw)
 - `src/plugins/index.ts` — `defaultPlugins` execution sequence
 - `src/functions/` — shared file session store (`localContextStore`), the
   context every plugin reads and mutates through
