@@ -794,17 +794,20 @@ const DashboardShell = ({ plugins }: { plugins: DashboardPlugin[] }) => {
             </ContentArea>
             <FooterBar data-testid="dashboard-footer">
                 <FooterInner>
-                    <span>Formatter Dashboard</span>
-                    {/* Right side: loaded file count + the package version
-                        (compile-time __APP_VERSION__ injected by vite.config.ts
-                        `define` — declared ambient in src/vite-env.d.ts). The
-                        version shows on the GitHub Pages deploy so users can
-                        see which release they are running. The lib build
+                    {/* Left side: product name with the version suffix.
+                        The version comes from the compile-time __APP_VERSION__
+                        constant injected by vite.config.ts `define` (declared
+                        ambient in src/vite-env.d.ts). It lives with the title
+                        so users can see which release they are running right
+                        where the product is named. The lib build
                         (tsconfig.build.json) never sees the constant since the
                         footer lives in this app-only dashboard file. */}
                     <span>
-                        {store.files.length} file{store.files.length === 1 ? '' : 's'} loaded ·
-                        v{__APP_VERSION__}
+                        Formatter Dashboard v{__APP_VERSION__}
+                    </span>
+                    {/* Right side: loaded file count */}
+                    <span>
+                        {store.files.length} file{store.files.length === 1 ? '' : 's'} loaded
                     </span>
                 </FooterInner>
             </FooterBar>

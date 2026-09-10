@@ -194,7 +194,7 @@ describe('FormatterDashboard', () => {
 
         await waitFor(() => {
             expect(screen.getByTestId('dashboard-footer').textContent).toBe(
-                'Formatter Dashboard1 file loaded · v1.0.2',
+                'Formatter Dashboard v1.0.21 file loaded',
             );
         });
         expect(screen.getAllByTestId('sidebar-file-one.txt')).toHaveLength(1);
@@ -721,12 +721,13 @@ describe('FormatterDashboard', () => {
     it('renders the footer with the loaded file count and the package version', async () => {
         render(<FormatterDashboard />);
 
-        // Empty session → zero files. The version suffix comes from the
-        // compile-time __APP_VERSION__ constant (vite.config.ts `define`
+        // Empty session → zero files. The version lives with the product
+        // name on the LEFT side of the footer; the version suffix comes from
+        // the compile-time __APP_VERSION__ constant (vite.config.ts `define`
         // reads it from package.json — currently 1.0.2); update this
         // assertion when bumping the package version.
         expect(screen.getByTestId('dashboard-footer').textContent).toBe(
-            'Formatter Dashboard0 files loaded · v1.0.2',
+            'Formatter Dashboard v1.0.20 files loaded',
         );
 
         fireEvent.drop(screen.getByTestId('dashboard-root'), {
@@ -740,7 +741,7 @@ describe('FormatterDashboard', () => {
 
         await waitFor(() => {
             expect(screen.getByTestId('dashboard-footer').textContent).toBe(
-                'Formatter Dashboard2 files loaded · v1.0.2',
+                'Formatter Dashboard v1.0.22 files loaded',
             );
         });
     });
