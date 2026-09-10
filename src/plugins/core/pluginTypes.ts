@@ -54,6 +54,20 @@ export type DashboardMenuItem = {
     render: React.ComponentType<DashboardMenuItemProps>;
 };
 
+// Payload the dashboard extracts from a window `paste` event and hands to
+// every plugin hooked into onPaste (cross-reference: dashboards/
+// FormatterDashboard.tsx handlePaste). Mirrors the drop hook's shape:
+// clipboard text and any clipboard files arrive together.
+export type DashboardPastePayload = {
+    // Clipboard TEXT — null when the clipboard held no text at all
+    // (event.clipboardData.getData('text/plain') returns '' in that case,
+    // which is normalized to null here so plugins can distinguish)
+    text: string | null;
+    // Files carried by the paste event (some OS paste flows deliver copied
+    // files through clipboardData.items) — empty when none
+    files: File[];
+};
+
 // Context passed to the selection-level render hook. Describes the CURRENT
 // multi-selection (two or more selected sidebar files):
 // - `files`         → all accepted files, in SIDEBAR (drop) order
@@ -101,4 +115,10 @@ export type DashboardPlugin = {
     // file type reader plugin (plugins/fileReader) hooks this to read and
     // open the files.
     onFilesDropped?: (files: File[], controls: DashboardControls) => void;
+    // Paste hook: fired when the user pastes into the dashboard (window
+    // `paste` listener — the dashboard owns the wiring). Receives the
+    // clipboard text + any clipboard files plus the session controls — the
+    // file-reader plugin hooks this to open the payload as date-named
+    // entries ([date].txt / [date].json) or real files.
+    onPaste?: (payload: DashboardPastePayload, controls: DashboardControls) => void;
 };

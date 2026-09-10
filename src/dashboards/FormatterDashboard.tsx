@@ -651,6 +651,41 @@ const DashboardShell = ({ plugins }: { plugins: DashboardPlugin[] }) => {
         event.stopPropagation();
     };
 
+    // Global paste: a window-level `paste` listener forwards the clipboard
+    // payload to every plugin hooked into onPaste (the file-reader plugin
+    // opens the text as [date].txt / [date].json and any clipboard files
+    // through the normal read pipeline). The listener is a DOCUMENT-level
+    // effect rather than a React prop because paste targets can be anywhere
+    // (body focus, not just inside the dashboard tree). Listeners fire in
+    // registration order — plugins are invoked in sequence order.
+    React.useEffect(() => {
+        const handlePaste = (event: ClipboardEvent) => {
+            const clipboard = event.clipboardData;
+            if (!clipboard) return;
+            // 'text/plain' covers plain AND json text — JSON is detected by
+            // CONTENT later (isJsonText), not by a separate clipboard flavor
+            const text = clipboard.getData('text/plain');
+            // Files ride clipboardData.items; collect every file entry
+            const clipboardFiles: File[] = [];
+            arrayEach(Array.from(clipboard.items), ({ value: item }) => {
+                if (item.kind === 'file') {
+                    const file = item.getAsFile();
+                    if (file) clipboardFiles.push(file);
+                }
+            });
+            // Nothing usable in the clipboard → no plugin round-trip
+            if (text === '' && clipboardFiles.length === 0) return;
+            arrayEach(plugins, ({ value: plugin }) => {
+                plugin.onPaste?.(
+                    { text: text === '' ? null : text, files: clipboardFiles },
+                    { store },
+                );
+            });
+        };
+        document.addEventListener('paste', handlePaste);
+        return () => document.removeEventListener('paste', handlePaste);
+    }, [plugins, store]);
+
     return (
         <DashboardRoot
             onDrop={handleDrop}
