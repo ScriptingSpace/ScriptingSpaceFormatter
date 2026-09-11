@@ -5,6 +5,14 @@ import { FormatterDashboard } from './FormatterDashboard';
 import { defaultPlugins } from '../plugins';
 import type { DashboardPlugin } from '../plugins';
 
+// Footer version assertion support — the footer renders the compile-time
+// __APP_VERSION__ constant (vite.config.ts / vitest.config.ts `define` reads
+// it from package.json; declared ambient in src/vite-env.d.ts). Building the
+// expected strings from the SAME constant keeps the assertions version-
+// agnostic so package version bumps never break the tests again (the
+// previously hardcoded 'v1.0.4x' strings broke on every release).
+const versionPrefix = `Formatter Dashboard v${__APP_VERSION__}`;
+
 // ─── pdf.js mock (via the LOCAL access layer — see PdfViewer.test.tsx for why
 // mocking 'pdfjs-dist' directly does not work through the re-export) ─────────
 // One page, 612×792, static text — enough to drive the PDF reader end-to-end.
@@ -194,7 +202,7 @@ describe('FormatterDashboard', () => {
 
         await waitFor(() => {
             expect(screen.getByTestId('dashboard-footer').textContent).toBe(
-                'Formatter Dashboard v1.0.41 file loaded',
+                `${versionPrefix}1 file loaded`,
             );
         });
         expect(screen.getAllByTestId('sidebar-file-one.txt')).toHaveLength(1);
@@ -724,10 +732,10 @@ describe('FormatterDashboard', () => {
         // Empty session → zero files. The version lives with the product
         // name on the LEFT side of the footer; the version suffix comes from
         // the compile-time __APP_VERSION__ constant (vite.config.ts `define`
-        // reads it from package.json — currently 1.0.4); update this
-        // assertion when bumping the package version.
+        // reads it from package.json) — asserted against package.json itself
+        // so version bumps never break this test.
         expect(screen.getByTestId('dashboard-footer').textContent).toBe(
-            'Formatter Dashboard v1.0.40 files loaded',
+            `${versionPrefix}0 files loaded`,
         );
 
         fireEvent.drop(screen.getByTestId('dashboard-root'), {
@@ -741,7 +749,7 @@ describe('FormatterDashboard', () => {
 
         await waitFor(() => {
             expect(screen.getByTestId('dashboard-footer').textContent).toBe(
-                'Formatter Dashboard v1.0.42 files loaded',
+                `${versionPrefix}2 files loaded`,
             );
         });
     });

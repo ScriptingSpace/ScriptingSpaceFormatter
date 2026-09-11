@@ -5,6 +5,13 @@ import { FormatterDashboard } from './FormatterDashboard';
 import { defaultPlugins } from '../plugins';
 import { dateStamp } from '../plugins/fileReader/clipboardText';
 
+// Footer version assertion support — the footer renders the compile-time
+// __APP_VERSION__ constant (vite.config.ts / vitest.config.ts `define` reads
+// it from package.json; declared ambient in src/vite-env.d.ts). Building the
+// expected string from the SAME constant keeps the assertion version-agnostic
+// so package version bumps never break the test again.
+const versionPrefix = `Formatter Dashboard v${__APP_VERSION__}`;
+
 // ─── Paste-entry tests: pasting into the dashboard opens clipboard content
 // as date-named sidebar entries ([date].txt / [date].json) and clipboard
 // files through the normal read pipeline. Cross-reference:
@@ -89,8 +96,10 @@ describe('paste entry ([date].txt / [date].json / clipboard files)', () => {
         expect(screen.getByTestId(`sidebar-file-${dateStampFor()}.txt`)).toBeDefined();
         expect(screen.getByTestId(`sidebar-file-${dateStampFor()}-2.txt`)).toBeDefined();
         expect(screen.getByTestId(`sidebar-file-${dateStampFor()}-3.txt`)).toBeDefined();
+        // Version asserted against package.json (the __APP_VERSION__ source)
+        // so package version bumps never break this test
         expect(screen.getByTestId('dashboard-footer').textContent).toBe(
-            'Formatter Dashboard v1.0.43 files loaded',
+            `${versionPrefix}3 files loaded`,
         );
         // The LAST paste is the focused one
         expect(screen.getByTestId('file-content-text').textContent).toBe('third paste');
