@@ -298,13 +298,41 @@ export const csvDiff = (
         });
     });
 
-    // ── Greedy global consumption, strongest match first ──
+    // ── Highest-match-only pruning ──
+    // The full matrix contains every candidate couple; a first-file row may
+    // appear in many of them (one per second-file row it scored against).
+    // Only each row's SINGLE best candidate is kept — a first-file row keeps
+    // its highest-scoring second-file partner, and vice versa. Lower-
+    // scoring couples are discarded BEFORE consumption so a row can never
+    // pair twice and the report shows only the strongest pairing per row.
+    // Ties keep the FIRST candidate encountered (deterministic: lowest
+    // second-file index, since the matrix is built in row order).
+    const bestForFirst = new Map<number, CsvCouple>();
+    const bestForSecond = new Map<number, CsvCouple>();
+    arrayEach(couples, ({ value: couple }) => {
+        const existingFirst = bestForFirst.get(couple.firstIndex);
+        if (!existingFirst || couple.score > existingFirst.score) {
+            bestForFirst.set(couple.firstIndex, couple);
+        }
+        const existingSecond = bestForSecond.get(couple.secondIndex);
+        if (!existingSecond || couple.score > existingSecond.score) {
+            bestForSecond.set(couple.secondIndex, couple);
+        }
+    });
+    // A couple survives ONLY if it is the best candidate for BOTH of its
+    // rows (mutual best match). Non-mutual couples are dropped entirely —
+    // their rows then simply have no pair and stay missing rows.
+    const mutualCouples = couples.filter(
+        (couple) =>
+            bestForFirst.get(couple.firstIndex) === couple &&
+            bestForSecond.get(couple.secondIndex) === couple,
+    );
+
+    // ── Consumption of the surviving (mutual-best) couples ──
     // Sorting descending by score means every 100% couple is consumed
-    // before any weaker couple is even considered — a row's exact match
-    // anywhere in the second file always wins over a same-position partial
-    // match. Ties break by first-file row number, then second-file row
-    // number → fully deterministic output.
-    couples.sort(
+    // before any weaker couple is even considered. Ties break by first-file
+    // row number, then second-file row number → fully deterministic output.
+    mutualCouples.sort(
         (a, b) => b.score - a.score || a.firstIndex - b.firstIndex || a.secondIndex - b.secondIndex,
     );
     const consumedFirst = new Set<number>();
@@ -315,7 +343,7 @@ export const csvDiff = (
         matchPercent: number;
         differences: { column: string; firstValue: string; secondValue: string }[];
     }[] = [];
-    arrayEach(couples, ({ value: couple }) => {
+    arrayEach(mutualCouples, ({ value: couple }) => {
         // Either side was already consumed by a stronger match → skip
         if (consumedFirst.has(couple.firstIndex) || consumedSecond.has(couple.secondIndex)) {
             return;

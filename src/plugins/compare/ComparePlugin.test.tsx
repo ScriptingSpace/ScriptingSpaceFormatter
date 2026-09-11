@@ -416,26 +416,27 @@ describe('comparePlugin — csv comparison', () => {
         // Default (lossless off) → identical
         expect(screen.getByTestId('csv-diff-identical')).toBeDefined();
 
-        // Toggle lossless ON → raw comparison → both cells differ. Both
-        // differences belong to the SAME row couple (key '1') → only one
-        // couple header line exists
+        // Toggle lossless ON → raw comparison → both cells differ. The flat
+        // table has ONE row per differing cell — the single couple (key
+        // '1') contributes two rows (status + age), each carrying its key
         fireEvent.click(screen.getByTestId('csv-diff-lossless'));
         expect((screen.getByTestId('csv-diff-lossless') as HTMLInputElement).checked).toBe(true);
 
         const cellRows = Array.from(
             screen.getByTestId('csv-diff-cells').querySelectorAll('[data-testid="csv-diff-cell-row"]'),
         ).map((cell) => cell.textContent);
-        expect(cellRows).toEqual(['1']);
+        expect(cellRows).toEqual(['1', '1']);
 
         // Raw values reported: 'Retired ' (untrimmed) and '12.00'.
         // Selection order: norm-a.csv opened by the drop, norm-b.csv clicked
         // in after → norm-a.csv = FIRST side, norm-b.csv = SECOND side.
-        // Match 33% (id matches, status + age differ of 3 columns)
+        // Match 33% (id matches, status + age differ of 3 columns). Flat
+        // table → every column is filled on BOTH cell rows.
         const cellSection = screen.getByTestId('csv-diff-cells');
         expect(cellSection.textContent).toBe(
             'Cell differencesKeyMatchRowsColumnnorm-a.csvnorm-b.csv1' +
                 '33%2 ↔ 2statusRetired Retired' +
-                'age12.0012',
+                '133%2 ↔ 2age12.0012',
         );
     });
 });
