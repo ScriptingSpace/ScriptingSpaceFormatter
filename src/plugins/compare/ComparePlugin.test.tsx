@@ -533,4 +533,143 @@ describe('comparePlugin — csv comparison', () => {
             ].join('\r\n'),
         ]);
     });
+
+    it('cross-highlights the matching value cell on hover', async () => {
+        // Fixture: couple 1 = (1,X) vs (1,Y) — name differs. Couple 2 =
+        // (2,Zed) vs (2,X) — name differs. The value 'X' appears as a
+        // DIFFERING cell on BOTH sides (first file in couple 1, second file
+        // in couple 2) — exactly the pair the cross-highlight links.
+        // Couple 2's first-file value 'Zed' has no counterpart anywhere.
+        render(<FormatterDashboard plugins={defaultPlugins} />);
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [
+                    new File(['id,name\n1,X\n2,Zed'], 'hov-a.csv', { type: 'text/csv' }),
+                    new File(['id,name\n1,Y\n2,X'], 'hov-b.csv', { type: 'text/csv' }),
+                ],
+            },
+        });
+        await waitFor(() => {
+            expect(screen.getByTestId('sidebar-file-hov-b.csv')).toBeDefined();
+        });
+        fireEvent.click(screen.getByTestId('sidebar-file-hov-a.csv'));
+        fireEvent.click(screen.getByTestId('content-tab-compare'));
+
+        // Selection order: hov-a.csv opened by the drop, hov-b.csv clicked
+        // in after → hov-a.csv = FIRST side, hov-b.csv = SECOND side. The
+        // table renders the SECOND file's value column first. Within the
+        // section, 'X' first appears as couple 1's FIRST-file cell, then as
+        // couple 2's SECOND-file cell.
+        const cellSection = screen.getByTestId('csv-diff-cells');
+        const spansWithText = (text: string) =>
+            Array.from(cellSection.querySelectorAll('span')).filter(
+                (span) => span.textContent === text,
+            );
+        const xFirst = spansWithText('X')[0]; // couple 1, first file (red)
+        const ySecond = spansWithText('Y')[0]; // couple 1, second file (green)
+
+        // Sanity: the fixture produces the expected cell rows. Only ONE
+        // couple exists: (1,X) vs (1,Y) at 50%. Couple 2 (Zed vs X) scores
+        // 0 (id AND name both differ) → no pairing, both rows stay missing
+        // rows — so 'Zed'/'X' from couple 2 never appear in this table.
+        expect(cellSection.textContent).toBe(
+            'Cell differences⎘KeyMatchRowsColumnhov-a.csvhov-b.csv1' +
+                '50%2 ↔ 2nameXY',
+        );
+
+        // Before any hover: no highlight on any value cell (no background
+        // applied — styledComponent resolves the transparent branch by
+        // omitting the property)
+        expect(xFirst.style.background).toBe('');
+        expect(ySecond.style.background).toBe('');
+
+        // Hover the FIRST file's 'X' cell → hovered tint on it. 'Y' has no
+        // matching value anywhere → stays unhighlighted.
+        fireEvent.mouseEnter(xFirst);
+        expect(xFirst.style.background).toBe('rgba(148, 163, 184, 0.25)');
+        expect(ySecond.style.background).toBe('');
+
+        // Mouse leaves → highlight clears
+        fireEvent.mouseLeave(xFirst);
+        expect(xFirst.style.background).toBe('');
+        expect(ySecond.style.background).toBe('');
+
+        // Hover the SECOND file's 'Y' cell (green side) → hovered tint on
+        // it, nothing matched
+        fireEvent.mouseEnter(ySecond);
+        expect(ySecond.style.background).toBe('rgba(148, 163, 184, 0.25)');
+        expect(xFirst.style.background).toBe('');
+
+        fireEvent.mouseLeave(ySecond);
+        expect(ySecond.style.background).toBe('');
+        expect(xFirst.style.background).toBe('');
+    });
+
+    it('cross-highlights cells with the SAME value across couples', async () => {
+        // Fixture: the value 'X' appears as a differing cell on BOTH sides
+        // of DIFFERENT couples — couple 1 is (1,X) vs (1,Y); couple 2 is
+        // (2,X) vs (2,Zed). Both couples score 50% (id matches, name
+        // differs) → both pair. 'X' exists as couple 1's first-file cell
+        // AND couple 2's second-file cell → hovering one highlights the
+        // other. 'Y' and 'Zed' have no counterpart.
+        render(<FormatterDashboard plugins={defaultPlugins} />);
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [
+                    new File(['id,name\n1,X\n2,X'], 'x-a.csv', { type: 'text/csv' }),
+                    new File(['id,name\n1,Y\n2,Zed'], 'x-b.csv', { type: 'text/csv' }),
+                ],
+            },
+        });
+        await waitFor(() => {
+            expect(screen.getByTestId('sidebar-file-x-b.csv')).toBeDefined();
+        });
+        fireEvent.click(screen.getByTestId('sidebar-file-x-a.csv'));
+        fireEvent.click(screen.getByTestId('content-tab-compare'));
+
+        // Selection order: x-a.csv = FIRST side, x-b.csv = SECOND side.
+        // 'X' appears twice in the first-file column (both couples) and
+        // never in the second-file column.
+        const cellSection = screen.getByTestId('csv-diff-cells');
+        const spansWithText = (text: string) =>
+            Array.from(cellSection.querySelectorAll('span')).filter(
+                (span) => span.textContent === text,
+            );
+        const xCells = spansWithText('X');
+        expect(xCells).toHaveLength(2);
+        const yCell = spansWithText('Y')[0];
+        const zedCell = spansWithText('Zed')[0];
+
+        // Sanity: both couples reported at 50%. Couple order follows the
+        // first file's row order: couple 1 = key '1' (X vs Y), couple 2 =
+        // key '2' (X vs Zed).
+        expect(cellSection.textContent).toBe(
+            'Cell differences⎘KeyMatchRowsColumnx-a.csvx-b.csv1' +
+                '50%2 ↔ 2nameXY2' +
+                '50%3 ↔ 3nameXZed',
+        );
+
+        // Hover the FIRST 'X' cell (couple 1) → hovered tint on it, MATCHED
+        // tint on the SECOND 'X' cell (couple 2, same value). 'Y'/'Zed'
+        // stay unhighlighted.
+        fireEvent.mouseEnter(xCells[0]);
+        expect(xCells[0].style.background).toBe('rgba(148, 163, 184, 0.25)');
+        expect(xCells[1].style.background).toBe('rgba(59, 130, 246, 0.25)');
+        expect(yCell.style.background).toBe('');
+        expect(zedCell.style.background).toBe('');
+
+        // Mouse leaves → both highlights clear
+        fireEvent.mouseLeave(xCells[0]);
+        expect(xCells[0].style.background).toBe('');
+        expect(xCells[1].style.background).toBe('');
+
+        // Hover the SECOND 'X' cell (couple 2) → mirrored behavior
+        fireEvent.mouseEnter(xCells[1]);
+        expect(xCells[1].style.background).toBe('rgba(148, 163, 184, 0.25)');
+        expect(xCells[0].style.background).toBe('rgba(59, 130, 246, 0.25)');
+
+        fireEvent.mouseLeave(xCells[1]);
+        expect(xCells[1].style.background).toBe('');
+        expect(xCells[0].style.background).toBe('');
+    });
 });

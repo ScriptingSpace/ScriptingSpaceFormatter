@@ -148,10 +148,29 @@ const MatchPercent = styledComponent<{ percent: number }>('span', {
 // the actively selected file) renders in the FIRST column, the FIRST file
 // (red) in the second — matching the diff view's green = added (new) /
 // red = removed (old) emphasis with green leading.
+//
+// NOTE: hover/matched tints are NOT declared here. styledComponent resolves
+// function values through Emotion CLASS-based CSS (injected via <style> in
+// document.head + @media (min-width: 0px) wrappers), so the tint would never
+// appear on `element.style` — and jsdom's getComputedStyle does not evaluate
+// Emotion's media-wrapped rules. The hover-driven background/outline are
+// therefore applied as an inline `style` prop at the call site (the allowed
+// exception for truly dynamic values) so the state is directly observable.
 const ValueCell = styledComponent<{ side: 'first' | 'second' }>('span', {
     whiteSpace: 'pre-wrap' as const,
     wordBreak: 'break-word' as const,
+    padding: '0 4px',
+    borderRadius: 4,
     color: ({ side }) => (side === 'first' ? '#f87171' : '#4ade80'),
+});
+
+// Inline hover/matched tint for a ValueCell — passed via the `style` prop.
+// Precedence: hovered (gray) wins over matched (blue) when both apply.
+// Unhighlighted → background '' (omitted) and no outline, so
+// `element.style.background` reads '' exactly like the tests assert.
+const valueCellHighlightStyle = (hovered?: boolean, matched?: boolean): React.CSSProperties => ({
+    background: hovered ? 'rgba(148, 163, 184, 0.25)' : matched ? 'rgba(59, 130, 246, 0.25)' : '',
+    outline: matched ? '1px solid rgba(59, 130, 246, 0.5)' : undefined,
 });
 
 // One bullet line inside a list section (missing columns / missing rows)
@@ -269,6 +288,18 @@ export const FileCsvDiffView = ({
     // numeric canonicalized, "Retired " === "Retired", "12.00" === "12").
     // ON → strict raw string comparison.
     const lossless = useToggleHook(false);
+    // Hover cross-highlighting — TWO pieces of state:
+    // - hoveredCellId: identity of the exact hovered cell (`<coupleIndex>-<side>`,
+    //   null = nothing hovered). Identity is needed because a same-value cell
+    //   must get the MATCHED tint, not the hovered tint — value alone cannot
+    //   distinguish the hovered cell from its twins.
+    // - hoveredValue: the hovered cell's RAW text, used to find same-value
+    //   cells anywhere in the table (either column — a value may repeat
+    //   within one column across couples too).
+    // useStateHook is an accessor function (read with no args, write with
+    // one), NOT an array-destructuring hook like React's useState.
+    const hoveredCellId = useStateHook<string | null>(null);
+    const hoveredValue = useStateHook<string | null>(null);
     // Copy-button feedback — flips to true for a moment after a successful
     // copy so the button label reads "Copied" instead of "Copy CSV"
     const copied = useToggleHook(false);
@@ -490,6 +521,13 @@ export const FileCsvDiffView = ({
                                     match.rowNumberFirst === difference.rowNumberFirst &&
                                     match.rowNumberSecond === difference.rowNumberSecond,
                             )?.matchPercent;
+                            // Raw values as displayed (empty → '(empty)'
+                            // placeholder). Hover identity uses the RAW cell
+                            // value so a '(empty)' placeholder never matches
+                            // a real '(empty)' text in another column
+                            // spuriously.
+                            const firstRaw = difference.firstValue;
+                            const secondRaw = difference.secondValue;
                             return (
                                 <React.Fragment key={`cell-${index}`}>
                                     <TableCell data-testid="csv-diff-cell-row">{difference.rowKey}</TableCell>
@@ -500,11 +538,50 @@ export const FileCsvDiffView = ({
                                         {difference.rowNumberFirst} ↔ {difference.rowNumberSecond}
                                     </TableCell>
                                     <TableCell>{difference.column}</TableCell>
-                                    <ValueCell side="second">
-                                        {difference.secondValue === '' ? '(empty)' : difference.secondValue}
+                                    {/* Hover identity: this cell's own id +
+                                        its raw value. hovered = THIS cell
+                                        is the hovered one; matched = a
+                                        DIFFERENT cell (any column) holds
+                                        the same value. Same-value cells
+                                        within the SAME column also match —
+                                        the twin lookup is column-blind. */}
+                                    <ValueCell
+                                        side="second"
+                                        style={valueCellHighlightStyle(
+                                            hoveredCellId() === `cell-${index}-second`,
+                                            hoveredCellId() !== null &&
+                                                hoveredValue() === secondRaw &&
+                                                hoveredCellId() !== `cell-${index}-second`,
+                                        )}
+                                        onMouseEnter={() => {
+                                            hoveredCellId(`cell-${index}-second`);
+                                            hoveredValue(secondRaw);
+                                        }}
+                                        onMouseLeave={() => {
+                                            hoveredCellId(null);
+                                            hoveredValue(null);
+                                        }}
+                                    >
+                                        {secondRaw === '' ? '(empty)' : secondRaw}
                                     </ValueCell>
-                                    <ValueCell side="first">
-                                        {difference.firstValue === '' ? '(empty)' : difference.firstValue}
+                                    <ValueCell
+                                        side="first"
+                                        style={valueCellHighlightStyle(
+                                            hoveredCellId() === `cell-${index}-first`,
+                                            hoveredCellId() !== null &&
+                                                hoveredValue() === firstRaw &&
+                                                hoveredCellId() !== `cell-${index}-first`,
+                                        )}
+                                        onMouseEnter={() => {
+                                            hoveredCellId(`cell-${index}-first`);
+                                            hoveredValue(firstRaw);
+                                        }}
+                                        onMouseLeave={() => {
+                                            hoveredCellId(null);
+                                            hoveredValue(null);
+                                        }}
+                                    >
+                                        {firstRaw === '' ? '(empty)' : firstRaw}
                                     </ValueCell>
                                 </React.Fragment>
                             );
