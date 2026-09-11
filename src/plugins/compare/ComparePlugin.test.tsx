@@ -333,4 +333,40 @@ describe('comparePlugin — csv comparison', () => {
         expect(screen.getByTestId('file-diff-grid')).toBeDefined();
         expect(screen.queryByTestId('file-csv-diff')).toBeNull();
     });
+
+    it('recomputes the comparison when the header row selector changes', async () => {
+        // Both files carry two preamble rows; the real header sits at row 3.
+        // Default (header row 1) → garbage columns, no pairing. Selecting 3
+        // → real headers, the data row pairs 100%.
+        render(<FormatterDashboard plugins={defaultPlugins} />);
+        const content = 'junk,junk\npreamble\nid,name\n1,Ann';
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [
+                    new File([content], 'pre-a.csv', { type: 'text/csv' }),
+                    new File([content], 'pre-b.csv', { type: 'text/csv' }),
+                ],
+            },
+        });
+        await waitFor(() => {
+            expect(screen.getByTestId('sidebar-file-pre-b.csv')).toBeDefined();
+        });
+        fireEvent.click(screen.getByTestId('sidebar-file-pre-a.csv'));
+        fireEvent.click(screen.getByTestId('content-tab-compare'));
+
+        // Default header row 1 → headers are the preamble cells → nothing
+        // matches cleanly; the report is NOT the identical message
+        expect(screen.queryByTestId('csv-diff-identical')).toBeNull();
+
+        // Set the header row to 3 on BOTH selectors → the preamble is
+        // ignored, the real header applies and the files become identical
+        fireEvent.change(screen.getByTestId('csv-diff-header-row-first'), {
+            target: { value: '3' },
+        });
+        fireEvent.change(screen.getByTestId('csv-diff-header-row-second'), {
+            target: { value: '3' },
+        });
+
+        expect(screen.getByTestId('csv-diff-identical')).toBeDefined();
+    });
 });

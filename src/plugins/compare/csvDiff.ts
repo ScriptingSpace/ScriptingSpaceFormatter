@@ -63,7 +63,8 @@ export type CsvRowMatch = {
 
 // One missing row — present in only one of the two files.
 export type CsvMissingRow = {
-    // Raw CSV line number (header = 1, first data row = 2)
+    // Raw CSV line number (header = the configured header row; first data
+    // row = header row + 1)
     rowNumber: number;
     // The row's cells as parsed (header layout of its own file)
     cells: string[];
@@ -89,6 +90,16 @@ export type CsvDiffResult = {
     // Differing cells on paired rows (first-file row order, then header
     // order within a pair)
     cellDifferences: CsvCellDifference[];
+};
+
+// Comparison options. `headerRowFirst` / `headerRowSecond` select WHICH raw
+// CSV line is the header row of each file (1-based; default 1). Every row
+// AFTER the header row is data; every row BEFORE it is ignored entirely
+// (preamble rows some exports prepend). A value beyond the parsed row count
+// clamps to the last row (header only, no data rows).
+export type CsvDiffOptions = {
+    headerRowFirst?: number;
+    headerRowSecond?: number;
 };
 
 // ─── CSV parser ──────────────────────────────────────────────────────────────
@@ -162,15 +173,31 @@ export const parseCsv = (content: string): string[][] => {
 };
 
 // ─── Comparison ──────────────────────────────────────────────────────────────
-export const csvDiff = (firstContent: string, secondContent: string): CsvDiffResult => {
+// `options.headerRowFirst` / `options.headerRowSecond` select the header row
+// of each file (1-based raw CSV line number, default 1). Data rows are every
+// parsed row AFTER the header row; rows BEFORE it are ignored (preamble).
+export const csvDiff = (
+    firstContent: string,
+    secondContent: string,
+    options: CsvDiffOptions = {},
+): CsvDiffResult => {
     const firstRows = parseCsv(firstContent);
     const secondRows = parseCsv(secondContent);
 
-    // Row 1 of each parse is the header row; data rows start at raw line 2
-    const headersFirst = firstRows[0] ?? [];
-    const headersSecond = secondRows[0] ?? [];
-    const firstData = firstRows.slice(1);
-    const secondData = secondRows.slice(1);
+    // Header selection: 1-based raw line number, clamped to [1, rowCount].
+    // Invalid (non-finite / < 1) → default 1. Data rows are everything
+    // AFTER the header row; rows BEFORE it are ignored entirely.
+    const resolveHeaderIndex = (rowCount: number, requested: number | undefined): number => {
+        if (requested === undefined || !Number.isFinite(requested)) return 0;
+        return Math.min(Math.max(Math.floor(requested) - 1, 0), Math.max(rowCount - 1, 0));
+    };
+    const headerIndexFirst = resolveHeaderIndex(firstRows.length, options.headerRowFirst);
+    const headerIndexSecond = resolveHeaderIndex(secondRows.length, options.headerRowSecond);
+
+    const headersFirst = firstRows[headerIndexFirst] ?? [];
+    const headersSecond = secondRows[headerIndexSecond] ?? [];
+    const firstData = firstRows.slice(headerIndexFirst + 1);
+    const secondData = secondRows.slice(headerIndexSecond + 1);
 
     // ── Column comparison (by NAME, order-independent) ──
     const columnsOnlyInFirst = headersFirst.filter((column) => !headersSecond.includes(column));
@@ -250,10 +277,14 @@ export const csvDiff = (firstContent: string, secondContent: string): CsvDiffRes
         consumedFirst.add(couple.firstIndex);
         consumedSecond.add(couple.secondIndex);
         pairs.push({
-            // Row numbers: data rows start at raw line 2 (line 1 is the header)
-            firstEntry: { rowNumber: couple.firstIndex + 2, cells: firstData[couple.firstIndex] },
+            // Row numbers: data rows start at raw line (header row + 1) —
+            // the header row itself is the configured headerRow position
+            firstEntry: {
+                rowNumber: couple.firstIndex + headerIndexFirst + 2,
+                cells: firstData[couple.firstIndex],
+            },
             secondEntry: {
-                rowNumber: couple.secondIndex + 2,
+                rowNumber: couple.secondIndex + headerIndexSecond + 2,
                 cells: secondData[couple.secondIndex],
             },
             matchPercent: couple.score,
@@ -286,12 +317,13 @@ export const csvDiff = (firstContent: string, secondContent: string): CsvDiffRes
     });
 
     // Unconsumed rows are the missing rows (file order preserved — the
-    // consumed sets are index-filtered over the original row arrays)
+    // consumed sets are index-filtered over the original row arrays).
+    // Row numbers offset by the configured header row position.
     const rowsOnlyInFirst = firstData
-        .map((cells, index) => ({ rowNumber: index + 2, cells }))
+        .map((cells, index) => ({ rowNumber: index + headerIndexFirst + 2, cells }))
         .filter((entry, index) => !consumedFirst.has(index));
     const rowsOnlyInSecond = secondData
-        .map((cells, index) => ({ rowNumber: index + 2, cells }))
+        .map((cells, index) => ({ rowNumber: index + headerIndexSecond + 2, cells }))
         .filter((entry, index) => !consumedSecond.has(index));
 
     return {

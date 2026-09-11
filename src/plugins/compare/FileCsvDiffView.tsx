@@ -1,5 +1,5 @@
 import React from 'react';
-import { styledComponent } from '@presource/react';
+import { styledComponent, useStateHook } from '@presource/react';
 import { csvDiff } from './csvDiff';
 import type { CsvDiffResult } from './csvDiff';
 
@@ -14,6 +14,11 @@ import type { CsvDiffResult } from './csvDiff';
 //    columns
 // 5. Missing rows — rows present in only one file (no acceptable match
 //    anywhere in the other file)
+//
+// A header-row selector (one number input per file, default 1) chooses
+// WHICH raw CSV line is treated as the column header — rows before it are
+// ignored (preamble), rows after it are data. Changing either selector
+// recomputes the whole comparison.
 //
 // Identical CSVs render a single "no differences" line.
 
@@ -120,9 +125,40 @@ const Muted = styledComponent('span', {
     color: '#475569',
 });
 
+// Header-row selector strip — one labeled number input per file
+const HeaderRowBar = styledComponent('div', {
+    display: 'flex',
+    flexDirection: 'row' as const,
+    gap: 16,
+    alignItems: 'center' as const,
+    flexShrink: 0,
+});
+
+// One selector: file label + number input
+const HeaderRowControl = styledComponent('label', {
+    display: 'flex',
+    flexDirection: 'row' as const,
+    gap: 6,
+    alignItems: 'center' as const,
+    fontSize: 12,
+    color: '#94a3b8',
+});
+
+// The number input itself — styled to match the shell's control family
+const HeaderRowInput = styledComponent('input', {
+    width: 56,
+    padding: '4px 6px',
+    fontSize: 12,
+    fontFamily: 'inherit',
+    borderRadius: 6,
+    border: '1px solid #1e293b',
+    background: '#0f172a',
+    color: '#e2e8f0',
+}) as unknown as React.FC<React.InputHTMLAttributes<HTMLInputElement>>;
+
 // ─── Component ───────────────────────────────────────────────────────────────
 // Recomputes the diff on every render — pure and deterministic for a given
-// (first, second) content pair.
+// (first, second, header rows) input triple.
 export const FileCsvDiffView = ({
     first,
     second,
@@ -130,7 +166,20 @@ export const FileCsvDiffView = ({
     first: { name: string; content: string };
     second: { name: string; content: string };
 }) => {
-    const result: CsvDiffResult = csvDiff(first.content, second.content);
+    // Header row position per file (1-based raw CSV line number, default 1).
+    // The input keeps its raw text so clearing it does not snap mid-edit;
+    // the committed value feeds the diff (invalid/empty → 1).
+    const headerRowFirstInput = useStateHook('1');
+    const headerRowSecondInput = useStateHook('1');
+    const resolveHeaderRow = (raw: string): number => {
+        const parsed = Number.parseInt(raw, 10);
+        return Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
+    };
+
+    const result: CsvDiffResult = csvDiff(first.content, second.content, {
+        headerRowFirst: resolveHeaderRow(headerRowFirstInput()),
+        headerRowSecond: resolveHeaderRow(headerRowSecondInput()),
+    });
 
     // Fully identical CSVs → single quiet line
     const identical =
@@ -143,6 +192,30 @@ export const FileCsvDiffView = ({
     if (identical) {
         return (
             <CsvFrame data-testid="file-csv-diff">
+                {/* Selector bar renders in the identical state too — switching
+                    the header row can turn "identical" into a diff */}
+                <HeaderRowBar data-testid="csv-diff-header-row-bar">
+                    <HeaderRowControl>
+                        Header row ({first.name})
+                        <HeaderRowInput
+                            type="number"
+                            min={1}
+                            value={headerRowFirstInput()}
+                            onChange={(event) => headerRowFirstInput(event.target.value)}
+                            data-testid="csv-diff-header-row-first"
+                        />
+                    </HeaderRowControl>
+                    <HeaderRowControl>
+                        Header row ({second.name})
+                        <HeaderRowInput
+                            type="number"
+                            min={1}
+                            value={headerRowSecondInput()}
+                            onChange={(event) => headerRowSecondInput(event.target.value)}
+                            data-testid="csv-diff-header-row-second"
+                        />
+                    </HeaderRowControl>
+                </HeaderRowBar>
                 <Muted data-testid="csv-diff-identical">The two CSV files are identical.</Muted>
             </CsvFrame>
         );
@@ -150,6 +223,32 @@ export const FileCsvDiffView = ({
 
     return (
         <CsvFrame data-testid="file-csv-diff">
+            {/* Header-row selectors — which raw CSV line is the column
+                header of each file (1-based; rows before it are ignored).
+                Changing either value recomputes the whole comparison. */}
+            <HeaderRowBar data-testid="csv-diff-header-row-bar">
+                <HeaderRowControl>
+                    Header row ({first.name})
+                    <HeaderRowInput
+                        type="number"
+                        min={1}
+                        value={headerRowFirstInput()}
+                        onChange={(event) => headerRowFirstInput(event.target.value)}
+                        data-testid="csv-diff-header-row-first"
+                    />
+                </HeaderRowControl>
+                <HeaderRowControl>
+                    Header row ({second.name})
+                    <HeaderRowInput
+                        type="number"
+                        min={1}
+                        value={headerRowSecondInput()}
+                        onChange={(event) => headerRowSecondInput(event.target.value)}
+                        data-testid="csv-diff-header-row-second"
+                    />
+                </HeaderRowControl>
+            </HeaderRowBar>
+
             {/* Summary — row counts per side */}
             <Section data-testid="csv-diff-summary">
                 <SectionTitle>Summary</SectionTitle>

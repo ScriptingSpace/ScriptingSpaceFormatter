@@ -406,3 +406,78 @@ describe('csvDiff — mixed scenarios', () => {
         expect(result.rowsOnlyInSecond).toEqual([{ rowNumber: 2, cells: ['3', '4'] }]);
     });
 });
+
+describe('csvDiff — header row selection', () => {
+    it('defaults to row 1 as the header (no options)', () => {
+        const result = csvDiff('id,name\n1,Ann', 'id,name\n1,Ann');
+        expect(result.headersFirst).toEqual(['id', 'name']);
+        expect(result.headersSecond).toEqual(['id', 'name']);
+    });
+
+    it('uses the 3rd row as the header when headerRow is 3 (preamble ignored)', () => {
+        // Rows 1-2 are preamble garbage; row 3 carries the real headers
+        const content = 'junk,junk\npreamble\nid,name\n1,Ann\n30';
+        const result = csvDiff(content, content, { headerRowFirst: 3, headerRowSecond: 3 });
+        expect(result.headersFirst).toEqual(['id', 'name']);
+        expect(result.headersSecond).toEqual(['id', 'name']);
+        // Rows AFTER the header are data — (1,Ann) pairs 100%; (30) has no
+        // counterpart value in the second file's columns... it pairs with
+        // itself at 50% (empty-vs-empty 'name' does not count, 'id'='30'
+        // matches) — both sides consumed
+        expect(result.dataRowCountFirst).toEqual(2);
+        expect(result.rowMatches).toEqual([
+            { rowNumberFirst: 4, rowNumberSecond: 4, matchPercent: 100 },
+            { rowNumberFirst: 5, rowNumberSecond: 5, matchPercent: 50 },
+        ]);
+        expect(result.rowsOnlyInFirst).toEqual([]);
+        expect(result.rowsOnlyInSecond).toEqual([]);
+    });
+
+    it('supports DIFFERENT header rows per file', () => {
+        // First file: header at row 1; second file: header at row 3 with two
+        // preamble rows — the data still pairs 100% by name-matched columns
+        const result = csvDiff(
+            'id,name\n1,Ann',
+            'preamble\nmore preamble\nid,name\n1,Ann',
+            { headerRowFirst: 1, headerRowSecond: 3 },
+        );
+        expect(result.headersFirst).toEqual(['id', 'name']);
+        expect(result.headersSecond).toEqual(['id', 'name']);
+        expect(result.rowMatches).toEqual([
+            { rowNumberFirst: 2, rowNumberSecond: 4, matchPercent: 100 },
+        ]);
+        expect(result.rowsOnlyInFirst).toEqual([]);
+        expect(result.rowsOnlyInSecond).toEqual([]);
+    });
+
+    it('reports raw line numbers relative to the file start (header row offset)', () => {
+        // Header at row 3 → data rows are lines 4 and 5; a missing row keeps
+        // its raw line number (5), not a data-relative index
+        const result = csvDiff(
+            'p\np\nid,name\n1,Ann',
+            'p\np\nid,name\n1,Ann\n2,Bob',
+            { headerRowFirst: 3, headerRowSecond: 3 },
+        );
+        expect(result.rowsOnlyInSecond).toEqual([{ rowNumber: 5, cells: ['2', 'Bob'] }]);
+    });
+
+    it('clamps an out-of-range header row to the last parsed row', () => {
+        // headerRow 99 on a 2-row file → header = last row, no data rows
+        const result = csvDiff('id,name\n1,Ann', 'id,name\n1,Ann', { headerRowFirst: 99 });
+        expect(result.headersFirst).toEqual(['1', 'Ann']);
+        expect(result.headersSecond).toEqual(['id', 'name']);
+        expect(result.dataRowCountFirst).toEqual(0);
+    });
+
+    it('falls back to row 1 for invalid header row values', () => {
+        const result = csvDiff('id,name\n1,Ann', 'id,name\n1,Ann', {
+            headerRowFirst: 0,
+            headerRowSecond: -5,
+        });
+        expect(result.headersFirst).toEqual(['id', 'name']);
+        expect(result.headersSecond).toEqual(['id', 'name']);
+        expect(result.rowMatches).toEqual([
+            { rowNumberFirst: 2, rowNumberSecond: 2, matchPercent: 100 },
+        ]);
+    });
+});
