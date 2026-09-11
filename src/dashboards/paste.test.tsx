@@ -90,7 +90,7 @@ describe('paste entry ([date].txt / [date].json / clipboard files)', () => {
         expect(screen.getByTestId(`sidebar-file-${dateStampFor()}-2.txt`)).toBeDefined();
         expect(screen.getByTestId(`sidebar-file-${dateStampFor()}-3.txt`)).toBeDefined();
         expect(screen.getByTestId('dashboard-footer').textContent).toBe(
-            'Formatter Dashboard v1.0.33 files loaded',
+            'Formatter Dashboard v1.0.43 files loaded',
         );
         // The LAST paste is the focused one
         expect(screen.getByTestId('file-content-text').textContent).toBe('third paste');
