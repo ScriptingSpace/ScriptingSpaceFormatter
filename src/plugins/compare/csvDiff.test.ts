@@ -1,15 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { parseCsv, csvDiff } from './csvDiff';
 
-// ─── csvDiff — order-independent CSV comparison with closest-match pairing ───
+// ─── csvDiff — order-independent CSV comparison, global closest-match ────────
 // Every assertion pins the EXACT expected output (full objects/arrays, raw
 // line numbers, exact cell values). Line-number model: header = line 1,
 // first data row = line 2 (raw CSV line numbers, matching the file text).
 //
-// Pairing cascade: EXACT (identical cell lists) → KEY (equal non-empty value
-// in the first shared column) → SIMILARITY (greedy global closest match over
-// the common columns; score-0 couples never pair). Unpaired rows are the
-// missing rows.
+// Algorithm: EVERY first-file row is scored against EVERY second-file row
+// (fraction of common columns with equal non-empty values); the score
+// matrix is consumed greedily strongest-first — the best couple wins
+// globally, both rows are omitted from further checking. Score-0 couples
+// never pair. Unconsumed rows are the missing rows.
 
 describe('parseCsv', () => {
     it('parses simple comma-separated rows', () => {
@@ -88,10 +89,39 @@ describe('csvDiff — identical / reordered content', () => {
         });
     });
 
-    it('pairs rows across swapped column layouts by key, reporting no differences', () => {
-        // Columns swapped → exact whole-row signatures do NOT match, but the
-        // key pass pairs by the 'id' column (found by NAME at different
-        // positions) and the cell comparison is name-matched → 100% matches
+    it('matches every first-file row against EVERY second-file row (far positions)', () => {
+        // 30 identical rows, second file rotated by 7 — first-file row 4
+        // (line 5) has its 100% twin at second-file line 12 (a far position)
+        const rows: string[] = [];
+        for (let index = 1; index <= 30; index++) {
+            rows.push(`${index},shared-${index}`);
+        }
+        const secondShuffled = [...rows.slice(7), ...rows.slice(0, 7)];
+        const result = csvDiff(
+            ['id,label', ...rows].join('\n'),
+            ['id,label', ...secondShuffled].join('\n'),
+        );
+        // Every row must pair 100% with its exact twin, wherever it sits
+        expect(result.rowsOnlyInFirst).toEqual([]);
+        expect(result.rowsOnlyInSecond).toEqual([]);
+        expect(result.cellDifferences).toEqual([]);
+        expect(result.rowMatches).toHaveLength(30);
+        // Every couple is a 100% match between the SAME id's rows
+        for (const match of result.rowMatches) {
+            const firstId = rows[match.rowNumberFirst - 2].split(',')[0];
+            // The second file's rows come from the SHUFFLED array
+            const secondId = secondShuffled[match.rowNumberSecond - 2].split(',')[0];
+            expect(firstId).toBe(secondId);
+            expect(match.matchPercent).toBe(100);
+        }
+        // At least one couple is cross-position (the rotation guarantees it)
+        expect(
+            result.rowMatches.some((match) => match.rowNumberFirst !== match.rowNumberSecond),
+        ).toBe(true);
+    });
+
+    it('pairs rows across swapped column layouts (name-matched columns)', () => {
+        // Columns swapped → the cell comparison matches columns by NAME
         const result = csvDiff('id,name\n1,Ann', 'name,id\nAnn,1');
         expect(result.rowMatches).toEqual([
             { rowNumberFirst: 2, rowNumberSecond: 2, matchPercent: 100 },
@@ -144,7 +174,7 @@ describe('csvDiff — missing rows', () => {
 });
 
 describe('csvDiff — cell differences (paired rows)', () => {
-    it('pairs rows by the first shared column and reports differing cells', () => {
+    it('pairs rows by closest match and reports differing cells', () => {
         const result = csvDiff('id,name\n1,Ann\n2,Bob', 'id,name\n1,Ann\n2,Bobby');
         expect(result.rowMatches).toEqual([
             { rowNumberFirst: 2, rowNumberSecond: 2, matchPercent: 100 },
@@ -164,7 +194,7 @@ describe('csvDiff — cell differences (paired rows)', () => {
         expect(result.rowsOnlyInSecond).toEqual([]);
     });
 
-    it('pairs rows regardless of row order (key-based, not position-based)', () => {
+    it('pairs rows regardless of row order (closest match, not position)', () => {
         const result = csvDiff('id,name\n1,Ann\n2,Bob', 'id,name\n2,Bobby\n1,Ann');
         expect(result.cellDifferences).toEqual([
             {
@@ -237,40 +267,34 @@ describe('csvDiff — cell differences (paired rows)', () => {
     });
 });
 
-describe('csvDiff — similarity matching (closest row anywhere)', () => {
-    it('pairs a row to its CLOSEST match in the other file, not the same position', () => {
-        // First-file row 3 (2,Bob) has NO exact/key counterpart — but it is
-        // a 50% similarity match for second-file row 2 (2,Bobby). Row 2
-        // (1,Ann) pairs exactly. Position-based comparison would wrongly
-        // pair 2,Bob against 2,Bobby's slot at line 2 — the similarity pass
-        // instead finds the globally closest candidate.
+describe('csvDiff — greedy global consumption', () => {
+    it('a 100% match anywhere beats a same-position partial match', () => {
+        // First-file row (2,Bob) has a 100% twin at second-file line 4 and a
+        // weaker 50% candidate at line 2 — the 100% couple must win even
+        // though the 50% candidate sits at the "same" position. Row (1,Ann)
+        // vs (2,Bobby) scores 0 (id AND name differ), so no second couple
+        // exists — (1,Ann), (2,Bobby) and (9,Zed) all stay missing.
         const result = csvDiff(
             'id,name\n1,Ann\n2,Bob',
-            'id,name\n2,Bobby\n1,Ann',
+            'id,name\n2,Bobby\n9,Zed\n2,Bob',
         );
         expect(result.rowMatches).toEqual([
-            { rowNumberFirst: 2, rowNumberSecond: 3, matchPercent: 100 },
-            { rowNumberFirst: 3, rowNumberSecond: 2, matchPercent: 50 },
+            { rowNumberFirst: 3, rowNumberSecond: 4, matchPercent: 100 },
         ]);
-        expect(result.cellDifferences).toEqual([
-            {
-                rowKey: '2',
-                rowNumberFirst: 3,
-                rowNumberSecond: 2,
-                column: 'name',
-                firstValue: 'Bob',
-                secondValue: 'Bobby',
-            },
+        expect(result.rowsOnlyInFirst).toEqual([{ rowNumber: 2, cells: ['1', 'Ann'] }]);
+        // (1,Ann) vs (2,Bobby): id differs, name differs → score 0 →
+        // (2,Bobby) stays unpaired as a missing row too
+        expect(result.rowsOnlyInSecond).toEqual([
+            { rowNumber: 2, cells: ['2', 'Bobby'] },
+            { rowNumber: 3, cells: ['9', 'Zed'] },
         ]);
-        expect(result.rowsOnlyInFirst).toEqual([]);
-        expect(result.rowsOnlyInSecond).toEqual([]);
+        expect(result.cellDifferences).toEqual([]);
     });
 
-    it('greedily consumes the globally best couples first', () => {
-        // Row A (1,x,y) matches B1 (1,x,z) at 66% and B2 (1,w,y) at 66%.
-        // Tie → lower second-file row number wins for A (B1, line 2), so
-        // B2 (line 3) pairs with B's counterpart row... only one first row
-        // exists here, so B2 stays missing.
+    it('consumes the globally best couples first when scores tie', () => {
+        // First row (1,x,y) ties at 67% with both second rows; the tie
+        // breaks by the second-file row number → line 2 wins, line 3 stays
+        // missing (only one first-file row exists)
         const result = csvDiff('id,a,b\n1,x,y', 'id,a,b\n1,x,z\n1,w,y');
         expect(result.rowMatches).toEqual([
             { rowNumberFirst: 2, rowNumberSecond: 2, matchPercent: 67 },
@@ -328,9 +352,8 @@ describe('csvDiff — mixed scenarios', () => {
         );
         expect(result.columnsOnlyInFirst).toEqual(['age']);
         expect(result.columnsOnlyInSecond).toEqual([]);
-        // Row (1,Ann,30) key-pairs with (1,Anna) — 'age' is not a common
-        // column so it is not a cell difference; similarity 50% (id + name
-        // match, name differs → 1 of 2 common columns matches)
+        // Row (1,Ann,30) vs (1,Anna): 50% (id matches, name differs — 'age'
+        // is not a common column, so not a cell difference)
         expect(result.cellDifferences).toEqual([
             {
                 rowKey: '1',
