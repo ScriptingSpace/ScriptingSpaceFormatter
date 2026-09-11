@@ -3,6 +3,52 @@ import { styledComponent, useStateHook, useToggleHook } from '@presource/react';
 import { csvDiff } from './csvDiff';
 import type { CsvDiffResult } from './csvDiff';
 
+// ─── Cell-differences → CSV serialization ────────────────────────────────────
+// Builds the clipboard payload for the copy button: a header row (Key,
+// Match, Rows, Column, <second file name>, <first file name>) followed by
+// one row per differing cell — mirroring the on-screen table exactly.
+// RFC-4180 quoting: a field containing a comma, double quote, or newline is
+// wrapped in double quotes with internal quotes doubled, so pasting into a
+// spreadsheet parses each value as one cell.
+const csvEscapeField = (value: string): string => {
+    if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+    return value;
+};
+
+const buildCellDifferencesCsv = (
+    cellDifferences: CsvDiffResult['cellDifferences'],
+    rowMatches: CsvDiffResult['rowMatches'],
+    secondName: string,
+    firstName: string,
+): string => {
+    const lines: string[] = [
+        ['Key', 'Match', 'Rows', 'Column', secondName, firstName].map(csvEscapeField).join(','),
+    ];
+    cellDifferences.forEach((difference) => {
+        // The couple's match percent comes from the rowMatches entry with
+        // the same line pair (same lookup the table render uses)
+        const matchPercent = rowMatches.find(
+            (match) =>
+                match.rowNumberFirst === difference.rowNumberFirst &&
+                match.rowNumberSecond === difference.rowNumberSecond,
+        )?.matchPercent;
+        lines.push(
+            [
+                difference.rowKey,
+                `${matchPercent ?? 0}%`,
+                `${difference.rowNumberFirst} ↔ ${difference.rowNumberSecond}`,
+                difference.column,
+                difference.secondValue === '' ? '(empty)' : difference.secondValue,
+                difference.firstValue === '' ? '(empty)' : difference.firstValue,
+            ]
+                .map(csvEscapeField)
+                .join(','),
+        );
+    });
+    // \r\n line endings — RFC-4180's canonical CSV row separator
+    return lines.join('\r\n');
+};
+
 // ─── CSV comparison view ─────────────────────────────────────────────────────
 // Renders the csvDiff result (csvDiff.ts) as a report with four sections:
 // 1. Summary — row counts per file
@@ -12,7 +58,10 @@ import type { CsvDiffResult } from './csvDiff';
 //    dedicated "Matched rows" table was merged into it — one table per
 //    couple instead of two). Column order: the SECOND-selected file's
 //    value (green, the actively selected file) comes FIRST, the
-//    FIRST-selected file's value (red) after it.
+//    FIRST-selected file's value (red) after it. A copy button next to the
+//    section header copies the table as CSV (RFC-4180 quoting: values
+//    containing commas/quotes/newlines are wrapped in double quotes) so it
+//    can be pasted into a spreadsheet or elsewhere.
 // 4. Missing rows — rows present in only one file (no acceptable match
 //    anywhere in the other file)
 //
@@ -173,6 +222,32 @@ const LosslessCheckbox = styledComponent('input', {
     cursor: 'pointer' as const,
 }) as unknown as React.FC<React.InputHTMLAttributes<HTMLInputElement>>;
 
+// Section header strip — title on the left, actions (copy button) on the
+// right. Used by the Cell differences section.
+const SectionHeader = styledComponent('div', {
+    display: 'flex',
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    marginBottom: 6,
+});
+
+// Copy button — small quiet button matching the shell's control family.
+// No '&:hover' nesting — styledComponent's input map is a flat CSS
+// property map (PrimaryInput), not an Emotion object-style sheet, so
+// pseudo-selectors are not supported there.
+const CopyButton = styledComponent('button', {
+    padding: '2px 10px',
+    fontSize: 11,
+    fontFamily: 'inherit',
+    borderRadius: 6,
+    border: '1px solid #1e293b',
+    background: '#0f172a',
+    color: '#94a3b8',
+    cursor: 'pointer' as const,
+    lineHeight: 1.5,
+}) as unknown as React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>>;
+
 // ─── Component ───────────────────────────────────────────────────────────────
 // Recomputes the diff on every render — pure and deterministic for a given
 // (first, second, header rows, lossless) input tuple.
@@ -192,6 +267,47 @@ export const FileCsvDiffView = ({
     // numeric canonicalized, "Retired " === "Retired", "12.00" === "12").
     // ON → strict raw string comparison.
     const lossless = useToggleHook(false);
+    // Copy-button feedback — flips to true for a moment after a successful
+    // copy so the button label reads "Copied" instead of "Copy CSV"
+    const copied = useToggleHook(false);
+    const copyCellDifferences = () => {
+        const csv = buildCellDifferencesCsv(
+            result.cellDifferences,
+            result.rowMatches,
+            second.name,
+            first.name,
+        );
+        // navigator.clipboard is unavailable on non-secure origins (file://,
+        // plain http) — fall back to the legacy execCommand path so the
+        // button still works there
+        const fallbackCopy = () => {
+            const textarea = document.createElement('textarea');
+            textarea.value = csv;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+            } finally {
+                document.body.removeChild(textarea);
+            }
+        };
+        const done = () => {
+            copied(true);
+            // Reset the "Copied" label after a short beat
+            window.setTimeout(() => copied(false), 1500);
+        };
+        if (navigator.clipboard?.writeText) {
+            navigator.clipboard.writeText(csv).then(done, () => {
+                fallbackCopy();
+                done();
+            });
+        } else {
+            fallbackCopy();
+            done();
+        }
+    };
     const resolveHeaderRow = (raw: string): number => {
         const parsed = Number.parseInt(raw, 10);
         return Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
@@ -340,7 +456,18 @@ export const FileCsvDiffView = ({
                 file (red) after. */}
             {result.cellDifferences.length > 0 ? (
                 <Section data-testid="csv-diff-cells">
-                    <SectionTitle>Cell differences</SectionTitle>
+                    <SectionHeader>
+                        <SectionTitle>Cell differences</SectionTitle>
+                        {/* Copy button — serializes the table as CSV (same
+                            columns/order as the on-screen table) and puts it
+                            on the clipboard for pasting elsewhere */}
+                        <CopyButton
+                            data-testid="csv-diff-cells-copy"
+                            onClick={copyCellDifferences}
+                        >
+                            {copied() ? 'Copied' : 'Copy CSV'}
+                        </CopyButton>
+                    </SectionHeader>
                     <DiffTable>
                         <TableHead>Key</TableHead>
                         <TableHead>Match</TableHead>

@@ -251,7 +251,7 @@ describe('comparePlugin — csv comparison', () => {
 
         const cellSection = screen.getByTestId('csv-diff-cells');
         expect(cellSection.textContent).toBe(
-            'Cell differencesKeyMatchRowsColumnalpha.csvbeta.csv2' +
+            'Cell differencesCopy CSVKeyMatchRowsColumnalpha.csvbeta.csv2' +
                 '50%2 ↔ 3nameBobBobby',
         );
 
@@ -434,9 +434,102 @@ describe('comparePlugin — csv comparison', () => {
         // table → every column is filled on BOTH cell rows.
         const cellSection = screen.getByTestId('csv-diff-cells');
         expect(cellSection.textContent).toBe(
-            'Cell differencesKeyMatchRowsColumnnorm-a.csvnorm-b.csv1' +
+            'Cell differencesCopy CSVKeyMatchRowsColumnnorm-a.csvnorm-b.csv1' +
                 '33%2 ↔ 2statusRetired Retired' +
                 '133%2 ↔ 2age12.0012',
         );
+    });
+
+    it('copies the cell-differences table as CSV via the copy button', async () => {
+        // jsdom has no navigator.clipboard — stub writeText before rendering
+        const written: string[] = [];
+        Object.defineProperty(navigator, 'clipboard', {
+            value: {
+                writeText: (text: string) => {
+                    written.push(text);
+                    return Promise.resolve();
+                },
+            },
+            configurable: true,
+        });
+
+        render(<FormatterDashboard plugins={defaultPlugins} />);
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [
+                    new File(['id,name\n1,Ann\n2,Bob'], 'copy-a.csv', { type: 'text/csv' }),
+                    new File(['id,name\n1,Anna\n2,Bobby'], 'copy-b.csv', { type: 'text/csv' }),
+                ],
+            },
+        });
+        await waitFor(() => {
+            expect(screen.getByTestId('sidebar-file-copy-b.csv')).toBeDefined();
+        });
+        fireEvent.click(screen.getByTestId('sidebar-file-copy-a.csv'));
+        fireEvent.click(screen.getByTestId('content-tab-compare'));
+
+        // Copy button sits next to the section header, label "Copy CSV"
+        expect(screen.getByTestId('csv-diff-cells-copy').textContent).toBe('Copy CSV');
+
+        fireEvent.click(screen.getByTestId('csv-diff-cells-copy'));
+
+        // Payload mirrors the on-screen table: header row + one row per
+        // differing cell, second file (copy-a.csv — wait: selection order
+        // makes copy-a the FIRST side and copy-b the SECOND; the SECOND
+        // file's column comes first). Values are the RAW unnormalized ones.
+        // Rows: '1,Ann' ↔ '1,Anna' (name differs) and '2,Bob' ↔ '2,Bobby'.
+        // Match 50%: id matches, name differs of 2 common columns.
+        expect(written).toEqual([
+            [
+                'Key,Match,Rows,Column,copy-a.csv,copy-b.csv',
+                '1,50%,2 ↔ 2,name,Ann,Anna',
+                '2,50%,3 ↔ 3,name,Bob,Bobby',
+            ].join('\r\n'),
+        ]);
+
+        // Button flips to "Copied" after a successful copy (the async
+        // clipboard promise resolves in a microtask — flush it first)
+        await waitFor(() => {
+            expect(screen.getByTestId('csv-diff-cells-copy').textContent).toBe('Copied');
+        });
+    });
+
+    it('escapes CSV special characters (commas, quotes) in the copy payload', async () => {
+        const written: string[] = [];
+        Object.defineProperty(navigator, 'clipboard', {
+            value: {
+                writeText: (text: string) => {
+                    written.push(text);
+                    return Promise.resolve();
+                },
+            },
+            configurable: true,
+        });
+
+        render(<FormatterDashboard plugins={defaultPlugins} />);
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [
+                    new File(['id,note\n1,"has, comma"'], 'esc-a.csv', { type: 'text/csv' }),
+                    new File(['id,note\n1,"has ""quote"""'], 'esc-b.csv', { type: 'text/csv' }),
+                ],
+            },
+        });
+        await waitFor(() => {
+            expect(screen.getByTestId('sidebar-file-esc-b.csv')).toBeDefined();
+        });
+        fireEvent.click(screen.getByTestId('sidebar-file-esc-a.csv'));
+        fireEvent.click(screen.getByTestId('content-tab-compare'));
+
+        fireEvent.click(screen.getByTestId('csv-diff-cells-copy'));
+
+        // Fields containing commas or quotes are RFC-4180 quoted with
+        // internal quotes doubled. Match 50% (id matches, note differs).
+        expect(written).toEqual([
+            [
+                'Key,Match,Rows,Column,esc-a.csv,esc-b.csv',
+                '1,50%,2 ↔ 2,note,"has, comma","has ""quote"""',
+            ].join('\r\n'),
+        ]);
     });
 });
