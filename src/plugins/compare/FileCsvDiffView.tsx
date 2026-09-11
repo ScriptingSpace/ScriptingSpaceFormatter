@@ -1,18 +1,19 @@
 import React from 'react';
-import { arrayEach } from '@presource/core';
 import { styledComponent } from '@presource/react';
 import { csvDiff } from './csvDiff';
 import type { CsvDiffResult } from './csvDiff';
 
 // ─── CSV comparison view ─────────────────────────────────────────────────────
-// Renders the csvDiff result (csvDiff.ts) as a report table with four
-// sections:
+// Renders the csvDiff result (csvDiff.ts) as a report with five sections:
 // 1. Summary — row counts per file
 // 2. Missing columns — header names present in only one file
-// 3. Cell differences — key-paired rows with differing values in common
-//    columns (key column = first shared header name)
-// 4. Missing rows — rows present in only one file (exact-match leftovers
-//    that no key pairing could resolve)
+// 3. Matched rows — paired row couples (row ↔ row) with their match
+//    percent. 100% rows exist in both files (possibly at a different
+//    position); partial matches show how close the paired rows are.
+// 4. Cell differences — paired rows with differing values in common
+//    columns
+// 5. Missing rows — rows present in only one file (no acceptable match
+//    anywhere in the other file)
 //
 // Identical CSVs render a single "no differences" line.
 
@@ -51,11 +52,21 @@ const Section = styledComponent('div', {
     flexDirection: 'column' as const,
 });
 
-// Grid for the cell-difference report — one row per difference:
-// key | row numbers | column | first value | second value
+// Grid for tabular report sections — matched rows and cell differences.
+// Matched rows:   first line ↔ second line | match%
+// Cell diffs:     key | rows | column | first value | second value
+const MatchTable = styledComponent('div', {
+    display: 'grid' as const,
+    gridTemplateColumns: 'minmax(120px, max-content) minmax(80px, max-content)',
+    width: 'max-content' as const,
+    minWidth: '100%',
+    gap: '2px 12px',
+});
+
 const DiffTable = styledComponent('div', {
     display: 'grid' as const,
-    gridTemplateColumns: 'minmax(60px, max-content) minmax(90px, max-content) minmax(90px, max-content) minmax(0, 1fr) minmax(0, 1fr)',
+    gridTemplateColumns:
+        'minmax(60px, max-content) minmax(90px, max-content) minmax(90px, max-content) minmax(0, 1fr) minmax(0, 1fr)',
     width: 'max-content' as const,
     minWidth: '100%',
     gap: '2px 8px',
@@ -74,6 +85,12 @@ const TableHead = styledComponent('span', {
 const TableCell = styledComponent('span', {
     whiteSpace: 'pre-wrap' as const,
     wordBreak: 'break-word' as const,
+});
+
+// Match-percent cell — full green at 100%, amber below (partial match)
+const MatchPercent = styledComponent<{ percent: number }>('span', {
+    fontWeight: 700,
+    color: ({ percent }) => (percent === 100 ? '#4ade80' : '#fbbf24'),
 });
 
 // Value cell tinted by which side it came from (matches the diff view's
@@ -173,7 +190,30 @@ export const FileCsvDiffView = ({
                 </Section>
             ) : null}
 
-            {/* Cell differences — key-paired rows with differing cell values */}
+            {/* Matched rows — row ↔ row couples with match percent. Rendered
+                whenever any pair exists (even all-100%: with other sections
+                present the coupling information is the report's backbone) */}
+            {result.rowMatches.length > 0 ? (
+                <Section data-testid="csv-diff-matches">
+                    <SectionTitle>Matched rows</SectionTitle>
+                    <MatchTable>
+                        <TableHead>Rows ({first.name} ↔ {second.name})</TableHead>
+                        <TableHead>Match</TableHead>
+                        {result.rowMatches.map((match) => (
+                            <React.Fragment key={`match-${match.rowNumberFirst}`}>
+                                <TableCell data-testid="csv-diff-match-row">
+                                    line {match.rowNumberFirst} ↔ line {match.rowNumberSecond}
+                                </TableCell>
+                                <MatchPercent percent={match.matchPercent}>
+                                    {match.matchPercent}%
+                                </MatchPercent>
+                            </React.Fragment>
+                        ))}
+                    </MatchTable>
+                </Section>
+            ) : null}
+
+            {/* Cell differences — paired rows with differing cell values */}
             {result.cellDifferences.length > 0 ? (
                 <Section data-testid="csv-diff-cells">
                     <SectionTitle>Cell differences</SectionTitle>

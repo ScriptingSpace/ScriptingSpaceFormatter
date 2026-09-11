@@ -2,31 +2,45 @@ import { arrayEach } from '@presource/core';
 
 // ─── CSV diff (pure function, no React) ──────────────────────────────────────
 // Order-independent comparison of two CSV documents. CSV rows carry no
-// guaranteed order, so the comparison NEVER aligns rows by position:
+// guaranteed order, so the comparison NEVER aligns rows by position: every
+// row of the first file is matched against its CLOSEST row anywhere in the
+// second file. The pairing cascade runs strongest-signal-first:
 //
-// 1. Both contents are parsed (RFC-4180-style: quoted fields, escaped
-//    quotes, embedded commas/newlines, \r\n line endings).
-// 2. COLUMN comparison — headers are matched BY NAME, so a reordered
-//    column layout is not reported as a difference. Headers present in
-//    only one file are listed as missing columns.
-// 3. ROW matching happens in two passes:
-//    a. EXACT pass — rows whose full cell list is identical consume each
-//       other (multiplicity-aware: duplicate rows match one-to-one).
-//    b. KEY pass — leftover rows are paired by their KEY COLUMN value
-//       (the first column name present in BOTH headers). Paired rows get
-//       a cell-by-cell comparison over the common columns (matched by
-//       name) — differing cells are reported as cell differences.
-// 4. Rows left unpaired after both passes are the MISSING rows: present
-//    in only one of the two files.
+// 1. EXACT pass      — identical full cell lists consume each other
+//                      (multiplicity-aware). A 100% match is simply a row
+//                      sitting at a different position in the second file —
+//                      recognized as the same row, never reported as a
+//                      difference.
+// 2. KEY pass        — leftover rows pair by equal value in the key column
+//                      (the first column name present in BOTH headers;
+//                      matched by NAME, not position). Stable ID-based
+//                      pairing. Empty keys never pair (no identity).
+// 3. SIMILARITY pass — every remaining first-file row is scored against
+//                      EVERY remaining second-file row over the common
+//                      columns (name-matched): score = fraction of common
+//                      columns with equal NON-EMPTY values. Pairs are
+//                      consumed greedily in descending score (ties: lower
+//                      first-file row number, then lower second-file row
+//                      number) so the globally closest matches win. Score-0
+//                      candidates are dropped — two rows sharing no
+//                      non-empty common value have nothing to compare and
+//                      stay unpaired.
+// 4. Rows surviving all passes are the MISSING rows: present in only one
+//    of the two files.
+//
+// Every paired couple (all three passes) is reported in `rowMatches` with
+// its match percent; differing cells of a pair are reported per column in
+// `cellDifferences`.
 //
 // Row numbers in the results are RAW CSV line numbers (header = line 1,
 // first data row = line 2) so they can be looked up directly in the
 // original file.
 
-// One reported cell difference — a key-paired row with a differing value
+// One reported cell difference — a paired row couple with a differing value
 // in a common (shared-name) column.
 export type CsvCellDifference = {
-    // Value of the key column in the paired row
+    // Value of the key column in the first file's row ('' when the two
+    // files share no column at all)
     rowKey: string;
     // Raw CSV line numbers (header = 1) of the paired rows
     rowNumberFirst: number;
@@ -35,6 +49,18 @@ export type CsvCellDifference = {
     column: string;
     firstValue: string;
     secondValue: string;
+};
+
+// One matched row couple — the pairing result regardless of whether cells
+// differ. 100% matches are rows that are simply at a different position in
+// the second file (or identical layouts).
+export type CsvRowMatch = {
+    // Raw CSV line numbers (header = 1) of the paired rows
+    rowNumberFirst: number;
+    rowNumberSecond: number;
+    // 0-100 integer — fraction of common columns with equal non-empty
+    // values (100 only from the exact pass)
+    matchPercent: number;
 };
 
 // One missing row — present in only one of the two files.
@@ -56,10 +82,14 @@ export type CsvDiffResult = {
     // Column names present in only one file (header order preserved)
     columnsOnlyInFirst: string[];
     columnsOnlyInSecond: string[];
+    // Matched row couples (sorted by the first file's row number) — includes
+    // 100% matches (same row, different position)
+    rowMatches: CsvRowMatch[];
     // Rows present in only one file (file order preserved)
     rowsOnlyInFirst: CsvMissingRow[];
     rowsOnlyInSecond: CsvMissingRow[];
-    // Differing cells on key-paired rows (first-file row order)
+    // Differing cells on paired rows (first-file row order, then header
+    // order within a pair)
     cellDifferences: CsvCellDifference[];
 };
 
@@ -148,113 +178,222 @@ export const csvDiff = (firstContent: string, secondContent: string): CsvDiffRes
     const columnsOnlyInFirst = headersFirst.filter((column) => !headersSecond.includes(column));
     const columnsOnlyInSecond = headersSecond.filter((column) => !headersFirst.includes(column));
 
-    // ── Pass 1: exact full-row matching (order-independent, multiplicity-aware)
-    // A row signature is the JSON of its cell list. Each signature matches
-    // min(firstCount, secondCount) times; occurrences beyond that matched
-    // multiplicity become leftovers on their side.
-    const signature = (cells: string[]): string => JSON.stringify(cells);
-    const countSignatures = (rows: string[][]): Map<string, number> => {
-        const counts = new Map<string, number>();
-        arrayEach(rows, ({ value: cells }) => {
-            const sig = signature(cells);
-            counts.set(sig, (counts.get(sig) ?? 0) + 1);
-        });
-        return counts;
-    };
-    const firstCounts = countSignatures(firstData);
-    const secondCounts = countSignatures(secondData);
+    // Common columns matched by NAME — the comparison basis for every
+    // pairing pass (position-independent, so reordered column layouts
+    // compare correctly)
+    const commonColumns = headersFirst
+        .map((name, firstIndex) => ({ name, firstIndex, secondIndex: headersSecond.indexOf(name) }))
+        .filter((entry) => entry.secondIndex !== -1);
 
-    // Per-signature CONSUMED counters — a row is paired only while the
-    // matched multiplicity for its signature is not yet exhausted (an
-    // `index >= matched` check would wrongly mark later occurrences of a
-    // signature as leftovers even when the side only has `matched` copies)
-    const firstConsumed = new Map<string, number>();
-    const secondConsumed = new Map<string, number>();
-
-    const leftoverFirst: CsvMissingRow[] = [];
-    const leftoverSecond: CsvMissingRow[] = [];
-    arrayEach(firstData, ({ index, value: cells }) => {
-        const sig = signature(cells);
-        const matched = Math.min(firstCounts.get(sig) ?? 0, secondCounts.get(sig) ?? 0);
-        const consumed = firstConsumed.get(sig) ?? 0;
-        // Row number: data rows start at raw line 2 (line 1 is the header)
-        if (consumed < matched) {
-            firstConsumed.set(sig, consumed + 1);
-        } else {
-            leftoverFirst.push({ rowNumber: index + 2, cells });
-        }
-    });
-    arrayEach(secondData, ({ index, value: cells }) => {
-        const sig = signature(cells);
-        const matched = Math.min(firstCounts.get(sig) ?? 0, secondCounts.get(sig) ?? 0);
-        const consumed = secondConsumed.get(sig) ?? 0;
-        if (consumed < matched) {
-            secondConsumed.set(sig, consumed + 1);
-        } else {
-            leftoverSecond.push({ rowNumber: index + 2, cells });
-        }
-    });
-
-    // ── Pass 2: key pairing among leftovers ──
     // Key column = the FIRST column name present in BOTH headers. Matching
     // the key by NAME (not position) keeps pairing stable across reordered
-    // column layouts. No common column → pairing is impossible; every
-    // leftover stays a missing row.
-    const keyColumn = headersFirst.find((column) => headersSecond.includes(column)) ?? null;
-    const keyIndexFirst = keyColumn === null ? -1 : headersFirst.indexOf(keyColumn);
-    const keyIndexSecond = keyColumn === null ? -1 : headersSecond.indexOf(keyColumn);
+    // column layouts.
+    const keyColumn = commonColumns.length > 0 ? commonColumns[0].name : null;
+    const keyIndexFirst =
+        keyColumn === null ? -1 : headersFirst.indexOf(keyColumn);
 
-    const cellDifferences: CsvCellDifference[] = [];
-    // Paired-entry tracking (by index into the leftover arrays) so the
-    // unpaired leftovers can be collected preserving each file's row order
+    // Cell-by-cell comparison of a row couple over the COMMON columns
+    // (matched by name). Columns missing on one side are already reported in
+    // the column section, not as per-cell differences. Missing trailing
+    // cells (short rows) read as ''.
+    // Empty-vs-empty cells are NOT counted as similarity — an all-empty row
+    // has no identity, so it must not pair on trivial empty matches.
+    const comparePair = (firstCells: string[], secondCells: string[]) => {
+        const differences: { column: string; firstValue: string; secondValue: string }[] = [];
+        let matched = 0;
+        arrayEach(commonColumns, ({ value: column }) => {
+            const firstValue = firstCells[column.firstIndex] ?? '';
+            const secondValue = secondCells[column.secondIndex] ?? '';
+            if (firstValue === secondValue) {
+                if (firstValue !== '') matched += 1;
+            } else {
+                differences.push({ column: column.name, firstValue, secondValue });
+            }
+        });
+        return {
+            differences,
+            // 0-100 integer similarity over the common columns
+            matchPercent:
+                commonColumns.length === 0
+                    ? 0
+                    : Math.round((matched / commonColumns.length) * 100),
+        };
+    };
+
+    // ── Pairing state ──
+    // Every pass appends consumed couples here; `paired*` sets track
+    // consumption BY INDEX INTO THE LEFTOVER ARRAYS (the exact pass consumes
+    // directly and never touches them — its rows never become leftovers).
+    type CsvPair = {
+        firstEntry: CsvMissingRow;
+        secondEntry: CsvMissingRow;
+        matchPercent: number;
+        differences: { column: string; firstValue: string; secondValue: string }[];
+    };
+    const pairs: CsvPair[] = [];
     const pairedFirst = new Set<number>();
     const pairedSecond = new Set<number>();
 
+    // ── Pass 1: EXACT ──
+    // Signature = JSON of the full cell list. Second-side rows are bucketed
+    // by signature in row order; each first-side row consumes one bucket
+    // entry one-to-one (multiplicity-aware: duplicate rows match
+    // one-to-one, extras survive as leftovers). A consumed couple is a 100%
+    // match at ANY row position — recognized, never reported as a diff.
+    const signature = (cells: string[]): string => JSON.stringify(cells);
+    const secondBySignature = new Map<string, { position: number; entry: CsvMissingRow }[]>();
+    arrayEach(secondData, ({ index, value: cells }) => {
+        const bucket = secondBySignature.get(signature(cells)) ?? [];
+        bucket.push({ position: index, entry: { rowNumber: index + 2, cells } });
+        secondBySignature.set(signature(cells), bucket);
+    });
+    const leftoverFirst: CsvMissingRow[] = [];
+    arrayEach(firstData, ({ index, value: cells }) => {
+        const bucket = secondBySignature.get(signature(cells));
+        if (bucket && bucket.length > 0) {
+            const counterpart = bucket.shift()!;
+            pairs.push({
+                firstEntry: { rowNumber: index + 2, cells },
+                secondEntry: counterpart.entry,
+                matchPercent: 100,
+                differences: [],
+            });
+        } else {
+            // Row number: data rows start at raw line 2 (line 1 is the header)
+            leftoverFirst.push({ rowNumber: index + 2, cells });
+        }
+    });
+    // Whatever remains in the signature buckets are the second-side
+    // leftovers — buckets are signature-grouped, so restore file order
+    const leftoverSecond: CsvMissingRow[] = [];
+    arrayEach(Array.from(secondBySignature.values()), ({ value: bucket }) => {
+        arrayEach(bucket, ({ value: item }) => {
+            leftoverSecond.push(item.entry);
+        });
+    });
+    leftoverSecond.sort((a, b) => a.rowNumber - b.rowNumber);
+
+    // ── Pass 2: KEY ──
+    // Leftover rows pair by equal NON-EMPTY key value (empty keys carry no
+    // identity). Buckets keep second-side rows in row order; consumption is
+    // first-come in first-file order.
     if (keyColumn !== null) {
-        // Bucket second-side leftovers by key value (position kept so the
-        // paired set can mark them for exclusion from rowsOnlyInSecond)
-        const secondByKey = new Map<
-            string,
-            { position: number; rowNumber: number; cells: string[] }[]
-        >();
+        const keyIndexSecond = headersSecond.indexOf(keyColumn);
+        const secondByKey = new Map<string, { position: number; entry: CsvMissingRow }[]>();
         arrayEach(leftoverSecond, ({ index, value: entry }) => {
             const key = entry.cells[keyIndexSecond] ?? '';
+            if (key === '') return;
             const bucket = secondByKey.get(key) ?? [];
-            bucket.push({ position: index, rowNumber: entry.rowNumber, cells: entry.cells });
+            bucket.push({ position: index, entry });
             secondByKey.set(key, bucket);
         });
         arrayEach(leftoverFirst, ({ index, value: entry }) => {
             const key = entry.cells[keyIndexFirst] ?? '';
+            if (key === '') return;
             const bucket = secondByKey.get(key);
-            // No counterpart with the same key → stays a missing row
+            // No counterpart with the same key → flows into the similarity pass
             if (!bucket || bucket.length === 0) return;
             const counterpart = bucket.shift()!;
             pairedFirst.add(index);
             pairedSecond.add(counterpart.position);
-            // Cell-by-cell comparison over the COMMON columns, matched by
-            // name — columns missing on one side are already reported in
-            // the column section, not as per-cell differences. Missing
-            // trailing cells (short rows) read as ''.
-            arrayEach(headersFirst, ({ index: firstIndex, value: column }) => {
-                const secondIndex = headersSecond.indexOf(column);
-                if (secondIndex === -1) return;
-                const firstValue = entry.cells[firstIndex] ?? '';
-                const secondValue = counterpart.cells[secondIndex] ?? '';
-                if (firstValue !== secondValue) {
-                    cellDifferences.push({
-                        rowKey: key,
-                        rowNumberFirst: entry.rowNumber,
-                        rowNumberSecond: counterpart.rowNumber,
-                        column,
-                        firstValue,
-                        secondValue,
-                    });
-                }
+            const { matchPercent, differences } = comparePair(entry.cells, counterpart.entry.cells);
+            pairs.push({
+                firstEntry: entry,
+                secondEntry: counterpart.entry,
+                matchPercent,
+                differences,
             });
         });
     }
 
-    // Unpaired leftovers are the missing rows
+    // ── Pass 3: SIMILARITY (closest match) ──
+    // Every remaining first-file row is scored against EVERY remaining
+    // second-file row — the match target is the closest row ANYWHERE in the
+    // second file, never the same position.
+    const remainingFirst = leftoverFirst
+        .map((entry, index) => ({ entry, index }))
+        .filter((candidate) => !pairedFirst.has(candidate.index));
+    const remainingSecond = leftoverSecond
+        .map((entry, index) => ({ entry, index }))
+        .filter((candidate) => !pairedSecond.has(candidate.index));
+
+    const candidates: {
+        firstIndex: number;
+        secondIndex: number;
+        score: number;
+        differences: { column: string; firstValue: string; secondValue: string }[];
+    }[] = [];
+    arrayEach(remainingFirst, ({ value: firstCandidate }) => {
+        arrayEach(remainingSecond, ({ value: secondCandidate }) => {
+            const { matchPercent, differences } = comparePair(
+                firstCandidate.entry.cells,
+                secondCandidate.entry.cells,
+            );
+            // Score 0 → the couple shares no non-empty common value —
+            // nothing to compare, both stay missing rows
+            if (matchPercent > 0) {
+                candidates.push({
+                    firstIndex: firstCandidate.index,
+                    secondIndex: secondCandidate.index,
+                    score: matchPercent,
+                    differences,
+                });
+            }
+        });
+    });
+
+    // Greedy global consumption: the best-scoring couple wins regardless of
+    // which row was seen first. Ties break by the first file's row number,
+    // then the second file's — fully deterministic.
+    candidates.sort(
+        (a, b) => b.score - a.score || a.firstIndex - b.firstIndex || a.secondIndex - b.secondIndex,
+    );
+    arrayEach(candidates, ({ value: candidate }) => {
+        // Either side was already consumed by a better match → skip
+        if (pairedFirst.has(candidate.firstIndex) || pairedSecond.has(candidate.secondIndex)) {
+            return;
+        }
+        pairedFirst.add(candidate.firstIndex);
+        pairedSecond.add(candidate.secondIndex);
+        const firstCandidate = remainingFirst.find((entry) => entry.index === candidate.firstIndex)!;
+        const secondCandidate = remainingSecond.find(
+            (entry) => entry.index === candidate.secondIndex,
+        )!;
+        pairs.push({
+            firstEntry: firstCandidate.entry,
+            secondEntry: secondCandidate.entry,
+            matchPercent: candidate.score,
+            differences: candidate.differences,
+        });
+    });
+
+    // ── Emit ──
+    // Pairs sorted by the first file's row number → rowMatches; each pair's
+    // differing cells flatten into cellDifferences (header order within a
+    // pair, preserved from comparePair)
+    pairs.sort((a, b) => a.firstEntry.rowNumber - b.firstEntry.rowNumber);
+    const rowMatches: CsvRowMatch[] = pairs.map((pair) => ({
+        rowNumberFirst: pair.firstEntry.rowNumber,
+        rowNumberSecond: pair.secondEntry.rowNumber,
+        matchPercent: pair.matchPercent,
+    }));
+    const cellDifferences: CsvCellDifference[] = [];
+    arrayEach(pairs, ({ value: pair }) => {
+        arrayEach(pair.differences, ({ value: difference }) => {
+            cellDifferences.push({
+                rowKey: pair.firstEntry.cells[keyIndexFirst] ?? '',
+                rowNumberFirst: pair.firstEntry.rowNumber,
+                rowNumberSecond: pair.secondEntry.rowNumber,
+                column: difference.column,
+                firstValue: difference.firstValue,
+                secondValue: difference.secondValue,
+            });
+        });
+    });
+
+    // Unpaired leftovers are the missing rows (file order preserved — both
+    // leftover arrays are built/sorted in row order and the paired sets are
+    // index-filtered, which keeps relative order)
     const rowsOnlyInFirst = leftoverFirst.filter((entry, index) => !pairedFirst.has(index));
     const rowsOnlyInSecond = leftoverSecond.filter((entry, index) => !pairedSecond.has(index));
 
@@ -265,6 +404,7 @@ export const csvDiff = (firstContent: string, secondContent: string): CsvDiffRes
         dataRowCountSecond: secondData.length,
         columnsOnlyInFirst,
         columnsOnlyInSecond,
+        rowMatches,
         rowsOnlyInFirst,
         rowsOnlyInSecond,
         cellDifferences,
