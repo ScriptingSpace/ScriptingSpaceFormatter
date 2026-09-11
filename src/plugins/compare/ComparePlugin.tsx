@@ -2,16 +2,31 @@ import React from 'react';
 import { styledComponent } from '@presource/react';
 import type { DashboardPlugin, DashboardSelectionContext } from '../core';
 import { FileDiffView } from './FileDiffView';
+import { FileCsvDiffView } from './FileCsvDiffView';
 
 // ─── COMPARE PLUGIN ──────────────────────────────────────────────────────────
-// Git-style file comparison. Hooks ONLY `renderSelection` — the selection-
-// level hook that fires when TWO OR MORE sidebar files are selected. The
-// dashboard renders the returned node as an extra content tab placed AFTER
-// the focused file's plugin tabs (tab label "Compare"). With fewer than two
-// selected files the hook never fires, so the tab simply does not exist.
+// File comparison. Hooks ONLY `renderSelection` — the selection-level hook
+// that fires when TWO OR MORE sidebar files are selected. The dashboard
+// renders the returned node as an extra content tab placed AFTER the focused
+// file's plugin tabs (tab label "Compare"). With fewer than two selected
+// files the hook never fires, so the tab simply does not exist.
+//
+// Comparison strategy per selection content:
+// - BOTH files are CSV (text kind + .csv extension) → order-independent CSV
+//   comparison (csvDiff.ts: missing columns / missing rows / cell
+//   differences) rendered by FileCsvDiffView.
+// - OTHERWISE all-text → git-style line diff (diffLines.ts) rendered by
+//   FileDiffView.
+// - Any non-text kind in the selection → no tab at all.
 
-// Non-text files have no line model — the diff only makes sense for text.
-// A selection containing any non-text kind contributes nothing (no tab).
+// A text file counts as CSV when its extension is .csv (case-insensitive).
+// Kind must already be 'text' — the diffability gate below runs first.
+const isCsvFile = (file: { name: string; kind: string }): boolean =>
+    file.kind === 'text' && file.name.toLowerCase().endsWith('.csv');
+
+// Non-text files have no line/cell model — the comparison only makes sense
+// for text. A selection containing any non-text kind contributes nothing
+// (no tab).
 const isDiffable = (context: DashboardSelectionContext): boolean =>
     context.files.filter((entry) => context.activeFileIds.includes(entry.name)).every(
         (entry) => entry.kind === 'text',
@@ -19,8 +34,9 @@ const isDiffable = (context: DashboardSelectionContext): boolean =>
 
 // The selection-level renderer. Receives the selection snapshot from the
 // dashboard (dashboards/FormatterDashboard.tsx builds it from the shared
-// store) and diffs the FIRST-selected file against the SECOND-selected
+// store) and compares the FIRST-selected file against the SECOND-selected
 // file — git semantics: first = old side (left), second = new side (right).
+// Two CSV files → CSV comparison view; otherwise the git-style line diff.
 const CompareSelectionView = ({ context }: { context: DashboardSelectionContext }) => {
     // Resolve the selected files in SELECTION order (activeFileIds order —
     // NOT sidebar order): the first-selected file is the diff's "old" side,
@@ -34,6 +50,10 @@ const CompareSelectionView = ({ context }: { context: DashboardSelectionContext 
 
     const first = selected[0];
     const second = selected[1];
+
+    // BOTH sides CSV → order-independent CSV comparison (missing columns /
+    // missing rows / cell differences); any other text pair → line diff
+    const csvComparison = isCsvFile(first) && isCsvFile(second);
 
     return (
         <DiffRoot data-testid="file-compare">
@@ -49,10 +69,17 @@ const CompareSelectionView = ({ context }: { context: DashboardSelectionContext 
                     {second.name}
                 </DiffLegend>
             </DiffHeader>
-            <FileDiffView
-                first={{ name: first.name, content: first.content }}
-                second={{ name: second.name, content: second.content }}
-            />
+            {csvComparison ? (
+                <FileCsvDiffView
+                    first={{ name: first.name, content: first.content }}
+                    second={{ name: second.name, content: second.content }}
+                />
+            ) : (
+                <FileDiffView
+                    first={{ name: first.name, content: first.content }}
+                    second={{ name: second.name, content: second.content }}
+                />
+            )}
         </DiffRoot>
     );
 };

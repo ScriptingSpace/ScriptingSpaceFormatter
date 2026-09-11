@@ -190,3 +190,147 @@ describe('comparePlugin', () => {
         expect(cells).toEqual(['1', ' ', '1', ' ']);
     });
 });
+
+// ─── CSV comparison (two .csv files selected) ────────────────────────────────
+// Two selected CSV files route the Compare tab to the order-independent CSV
+// comparison (csvDiff.ts) instead of the git-style line diff.
+
+describe('comparePlugin — csv comparison', () => {
+    // Drop two CSV files and multi-select both (beta selected by the drop;
+    // clicking alpha toggles it INTO the selection)
+    const setupTwoCsvSelected = async () => {
+        render(<FormatterDashboard plugins={defaultPlugins} />);
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [
+                    new File(['id,name\n1,Ann\n2,Bob'], 'alpha.csv', { type: 'text/csv' }),
+                    new File(['id,name\n2,Bobby\n1,Ann'], 'beta.csv', { type: 'text/csv' }),
+                ],
+            },
+        });
+        await waitFor(() => {
+            expect(screen.getByTestId('sidebar-file-beta.csv')).toBeDefined();
+        });
+        fireEvent.click(screen.getByTestId('sidebar-file-alpha.csv'));
+    };
+
+    it('adds a Compare tab for two selected CSV files', async () => {
+        await setupTwoCsvSelected();
+
+        expect(screen.getByTestId('file-options')).toBeDefined();
+        const tabTestIds = Array.from(
+            screen.getByTestId('file-option-panel-alpha.csv').querySelector('[data-testid="content-tabs"]')!
+                .children[0].children,
+        ).map((tab) => tab.getAttribute('data-testid'));
+        expect(tabTestIds).toEqual(['content-tab-text', 'content-tab-compare']);
+    });
+
+    it('shows the CSV report (not the line diff) with cell differences and missing rows', async () => {
+        await setupTwoCsvSelected();
+
+        fireEvent.click(screen.getByTestId('content-tab-compare'));
+
+        // CSV view mounted — the line-diff grid must NOT be present
+        expect(screen.getByTestId('file-csv-diff')).toBeDefined();
+        expect(screen.queryByTestId('file-diff-grid')).toBeNull();
+
+        // Summary row counts (2 data rows each). Selection order: beta.csv
+        // was opened by the drop (drop activates the LAST file), alpha.csv
+        // clicked in after → beta.csv = first side, alpha.csv = second side
+        const summary = screen.getByTestId('csv-diff-summary');
+        expect(summary.textContent).toBe('Summary1beta.csv: 2 data rows2alpha.csv: 2 data rows');
+
+        // Cell difference: key '2' paired across the reordered rows —
+        // beta row 2 (2,Bobby) vs alpha row 3 (2,Bob)
+        const cellRows = Array.from(
+            screen.getByTestId('csv-diff-cells').querySelectorAll('[data-testid="csv-diff-cell-row"]'),
+        ).map((cell) => cell.textContent);
+        expect(cellRows).toEqual(['2']);
+
+        const cellSection = screen.getByTestId('csv-diff-cells');
+        expect(cellSection.textContent).toBe(
+            'Cell differencesKeyRowsColumnbeta.csvalpha.csv2' +
+                '2 ↔ 3nameBobbyBob',
+        );
+
+        // No missing columns / missing rows in this fixture
+        expect(screen.queryByTestId('csv-diff-columns')).toBeNull();
+        expect(screen.queryByTestId('csv-diff-rows')).toBeNull();
+    });
+
+    it('reports missing columns and missing rows for divergent CSVs', async () => {
+        render(<FormatterDashboard plugins={defaultPlugins} />);
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [
+                    new File(['id,name,age\n1,Ann,30\n3,Cid,20'], 'first.csv', { type: 'text/csv' }),
+                    new File(['id,name\n1,Anna\n2,Bob'], 'second.csv', { type: 'text/csv' }),
+                ],
+            },
+        });
+        await waitFor(() => {
+            expect(screen.getByTestId('sidebar-file-second.csv')).toBeDefined();
+        });
+        fireEvent.click(screen.getByTestId('sidebar-file-first.csv'));
+
+        fireEvent.click(screen.getByTestId('content-tab-compare'));
+
+        expect(screen.getByTestId('file-csv-diff')).toBeDefined();
+
+        // Missing column: 'age' only in first.csv. Selection order:
+        // second.csv opened by the drop, first.csv clicked in after →
+        // first.csv is the SECOND side (marker "2")
+        const columnRows = Array.from(
+            screen.getByTestId('csv-diff-columns').querySelectorAll('[data-testid="csv-diff-column"]'),
+        ).map((row) => row.textContent);
+        expect(columnRows).toEqual(['2ageonly in first.csv']);
+
+        // Cell difference on the key-paired row '1' (name Ann vs Anna)
+        const cellRows = Array.from(
+            screen.getByTestId('csv-diff-cells').querySelectorAll('[data-testid="csv-diff-cell-row"]'),
+        ).map((cell) => cell.textContent);
+        expect(cellRows).toEqual(['1']);
+
+        // Missing rows: '3,Cid,20' only in first.csv (second side, marker
+        // "2"), '2,Bob' only in second.csv (first side, marker "1")
+        const rowLines = Array.from(
+            screen.getByTestId('csv-diff-rows').querySelectorAll('[data-testid="csv-diff-row"]'),
+        ).map((row) => row.textContent);
+        expect(rowLines).toEqual([
+            '1line 3: 2, Bobonly in second.csv',
+            '2line 3: 3, Cid, 20only in first.csv',
+        ]);
+    });
+
+    it('shows the identical-CSV message when both files match', async () => {
+        render(<FormatterDashboard plugins={defaultPlugins} />);
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [
+                    new File(['id,name\n1,Ann'], 'same-a.csv', { type: 'text/csv' }),
+                    new File(['id,name\n1,Ann'], 'same-b.csv', { type: 'text/csv' }),
+                ],
+            },
+        });
+        await waitFor(() => {
+            expect(screen.getByTestId('sidebar-file-same-b.csv')).toBeDefined();
+        });
+        fireEvent.click(screen.getByTestId('sidebar-file-same-a.csv'));
+
+        fireEvent.click(screen.getByTestId('content-tab-compare'));
+
+        expect(screen.getByTestId('csv-diff-identical').textContent).toBe(
+            'The two CSV files are identical.',
+        );
+    });
+
+    it('keeps the line diff for two non-CSV text files (regression)', async () => {
+        await setupTwoSelected();
+
+        fireEvent.click(screen.getByTestId('content-tab-compare'));
+
+        // .txt selection → git-style line diff, not the CSV report
+        expect(screen.getByTestId('file-diff-grid')).toBeDefined();
+        expect(screen.queryByTestId('file-csv-diff')).toBeNull();
+    });
+});
