@@ -407,6 +407,121 @@ describe('csvDiff — mixed scenarios', () => {
     });
 });
 
+describe('csvDiff — lossless option (value normalization)', () => {
+    it('treats trailing-whitespace values as equal by default (trimmed)', () => {
+        // Default (lossless OFF): "Retired " === "Retired" → no difference
+        const result = csvDiff('id,status\n1,Retired ', 'id,status\n1,Retired');
+        expect(result.cellDifferences).toEqual([]);
+        expect(result.rowMatches).toEqual([
+            { rowNumberFirst: 2, rowNumberSecond: 2, matchPercent: 100 },
+        ]);
+    });
+
+    it('treats numeric-formatted values as equal by default ("12.00" === "12")', () => {
+        const result = csvDiff('id,price\n1,12.00', 'id,price\n1,12');
+        expect(result.cellDifferences).toEqual([]);
+        expect(result.rowMatches).toEqual([
+            { rowNumberFirst: 2, rowNumberSecond: 2, matchPercent: 100 },
+        ]);
+    });
+
+    it('canonicalizes padded and zero-padded numbers (" 007 " === "7")', () => {
+        const result = csvDiff('id,code\n1, 007 ', 'id,code\n1,7');
+        expect(result.cellDifferences).toEqual([]);
+        expect(result.rowMatches).toEqual([
+            { rowNumberFirst: 2, rowNumberSecond: 2, matchPercent: 100 },
+        ]);
+    });
+
+    it('reports the RAW values in cell differences even when normalized', () => {
+        // "Bob " vs "Bobby" differs either way, but the reported values
+        // must be the untrimmed originals
+        const result = csvDiff('id,name\n1,Bob ', 'id,name\n1,Bobby');
+        expect(result.cellDifferences).toEqual([
+            {
+                rowKey: '1',
+                rowNumberFirst: 2,
+                rowNumberSecond: 2,
+                column: 'name',
+                firstValue: 'Bob ',
+                secondValue: 'Bobby',
+            },
+        ]);
+    });
+
+    it('does not canonicalize non-numeric values (only trims them)', () => {
+        // "1.2.3" is not a finite number → stays a string (trimmed only)
+        const result = csvDiff('id,ver\n1,1.2.3 ', 'id,ver\n1,1.2.3');
+        expect(result.cellDifferences).toEqual([]);
+        // "1.2.3 " vs "1.2" → different after trim, not numbers → differs
+        const result2 = csvDiff('id,ver\n1,1.2.3', 'id,ver\n1,1.2');
+        expect(result2.cellDifferences).toEqual([
+            {
+                rowKey: '1',
+                rowNumberFirst: 2,
+                rowNumberSecond: 2,
+                column: 'ver',
+                firstValue: '1.2.3',
+                secondValue: '1.2',
+            },
+        ]);
+    });
+
+    it('does not treat whitespace-only vs empty as a matched value', () => {
+        // 'name' cells (' ' and '') normalize equal but empty → no match
+        // credit; the id column ('1' === '1') is the only matched column →
+        // the pair forms at 50% with NO cell difference
+        const result = csvDiff('id,name\n1, ', 'id,name\n1,');
+        expect(result.cellDifferences).toEqual([]);
+        expect(result.rowMatches).toEqual([
+            { rowNumberFirst: 2, rowNumberSecond: 2, matchPercent: 50 },
+        ]);
+    });
+
+    it('lossless: true keeps strict raw comparison ("Retired " !== "Retired")', () => {
+        const result = csvDiff('id,status\n1,Retired ', 'id,status\n1,Retired', {
+            lossless: true,
+        });
+        expect(result.cellDifferences).toEqual([
+            {
+                rowKey: '1',
+                rowNumberFirst: 2,
+                rowNumberSecond: 2,
+                column: 'status',
+                firstValue: 'Retired ',
+                secondValue: 'Retired',
+            },
+        ]);
+    });
+
+    it('lossless: true keeps strict raw comparison ("12.00" !== "12")', () => {
+        const result = csvDiff('id,price\n1,12.00', 'id,price\n1,12', { lossless: true });
+        expect(result.cellDifferences).toEqual([
+            {
+                rowKey: '1',
+                rowNumberFirst: 2,
+                rowNumberSecond: 2,
+                column: 'price',
+                firstValue: '12.00',
+                secondValue: '12',
+            },
+        ]);
+    });
+
+    it('normalization applies to row matching (rows pair across formats)', () => {
+        // Row pairing is value-based: "2,Bobby " pairs with "2,Bobby" even
+        // though the raw cells differ
+        const result = csvDiff('id,name\n1,Ann\n2,Bobby ', 'id,name\n2,Bobby\n1,Ann');
+        expect(result.rowMatches).toEqual([
+            { rowNumberFirst: 2, rowNumberSecond: 3, matchPercent: 100 },
+            { rowNumberFirst: 3, rowNumberSecond: 2, matchPercent: 100 },
+        ]);
+        expect(result.cellDifferences).toEqual([]);
+        expect(result.rowsOnlyInFirst).toEqual([]);
+        expect(result.rowsOnlyInSecond).toEqual([]);
+    });
+});
+
 describe('csvDiff — header row selection', () => {
     it('defaults to row 1 as the header (no options)', () => {
         const result = csvDiff('id,name\n1,Ann', 'id,name\n1,Ann');

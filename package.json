@@ -1,6 +1,6 @@
 {
     "name": "@scripting-space/formatter",
-    "version": "1.0.7",
+    "version": "1.0.8",
     "description": "Scripting Space Formatter — plug-and-play dashboard that accepts dropped files into a sidebar; the left content pane is reserved for future formatting output",
     "type": "module",
     "main": "lib/index.js",

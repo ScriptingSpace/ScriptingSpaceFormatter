@@ -1,19 +1,23 @@
 import React from 'react';
-import { styledComponent, useStateHook } from '@presource/react';
+import { styledComponent, useStateHook, useToggleHook } from '@presource/react';
 import { csvDiff } from './csvDiff';
 import type { CsvDiffResult } from './csvDiff';
 
 // ─── CSV comparison view ─────────────────────────────────────────────────────
-// Renders the csvDiff result (csvDiff.ts) as a report with five sections:
+// Renders the csvDiff result (csvDiff.ts) as a report with four sections:
 // 1. Summary — row counts per file
 // 2. Missing columns — header names present in only one file
-// 3. Matched rows — paired row couples (row ↔ row) with their match
-//    percent. 100% rows exist in both files (possibly at a different
-//    position); partial matches show how close the paired rows are.
-// 4. Cell differences — paired rows with differing values in common
-//    columns
-// 5. Missing rows — rows present in only one file (no acceptable match
+// 3. Cell differences — paired rows with differing values in common
+//    columns. Each row couple's match percent is shown IN THIS TABLE (a
+//    dedicated "Matched rows" table was merged into it — one table per
+//    couple instead of two). Column order: the SECOND-selected file's
+//    value (green, the actively selected file) comes FIRST, the
+//    FIRST-selected file's value (red) after it.
+// 4. Missing rows — rows present in only one file (no acceptable match
 //    anywhere in the other file)
+//
+// 100%-matched couples (no differing cells) produce no cell-difference
+// entry, so they simply do not appear in the cell-differences table.
 //
 // A header-row selector (one number input per file, default 1) chooses
 // WHICH raw CSV line is treated as the column header — rows before it are
@@ -57,21 +61,15 @@ const Section = styledComponent('div', {
     flexDirection: 'column' as const,
 });
 
-// Grid for tabular report sections — matched rows and cell differences.
-// Matched rows:   first line ↔ second line | match%
-// Cell diffs:     key | rows | column | first value | second value
-const MatchTable = styledComponent('div', {
-    display: 'grid' as const,
-    gridTemplateColumns: 'minmax(120px, max-content) minmax(80px, max-content)',
-    width: 'max-content' as const,
-    minWidth: '100%',
-    gap: '2px 12px',
-});
-
+// Grid for the tabular report section — cell differences. Each row couple
+// with differing cells occupies TWO table rows: a "match" row (couple id +
+// match percent, spanning visually via the muted percent cell) followed by
+// one row per differing cell.
+// Layout: key | match% | rows | column | second value (green) | first value (red)
 const DiffTable = styledComponent('div', {
     display: 'grid' as const,
     gridTemplateColumns:
-        'minmax(60px, max-content) minmax(90px, max-content) minmax(90px, max-content) minmax(0, 1fr) minmax(0, 1fr)',
+        'minmax(60px, max-content) minmax(80px, max-content) minmax(90px, max-content) minmax(90px, max-content) minmax(0, 1fr) minmax(0, 1fr)',
     width: 'max-content' as const,
     minWidth: '100%',
     gap: '2px 8px',
@@ -92,14 +90,19 @@ const TableCell = styledComponent('span', {
     wordBreak: 'break-word' as const,
 });
 
-// Match-percent cell — full green at 100%, amber below (partial match)
-const MatchPercent = styledComponent<{ percent: number }>('span', {
+// Match-percent cell — full green at 100%, amber below (partial match);
+// muted when shown inside the cell-differences table (the percent is
+// metadata there, not the row's primary content)
+const MatchPercent = styledComponent<{ percent: number; muted?: boolean }>('span', {
     fontWeight: 700,
-    color: ({ percent }) => (percent === 100 ? '#4ade80' : '#fbbf24'),
+    color: ({ percent, muted }) =>
+        muted ? '#475569' : percent === 100 ? '#4ade80' : '#fbbf24',
 });
 
-// Value cell tinted by which side it came from (matches the diff view's
-// red = removed / green = added convention)
+// Value cell tinted by which side it came from. The SECOND file (green —
+// the actively selected file) renders in the FIRST column, the FIRST file
+// (red) in the second — matching the diff view's green = added (new) /
+// red = removed (old) emphasis with green leading.
 const ValueCell = styledComponent<{ side: 'first' | 'second' }>('span', {
     whiteSpace: 'pre-wrap' as const,
     wordBreak: 'break-word' as const,
@@ -156,9 +159,27 @@ const HeaderRowInput = styledComponent('input', {
     color: '#e2e8f0',
 }) as unknown as React.FC<React.InputHTMLAttributes<HTMLInputElement>>;
 
+// Lossless toggle — a labeled checkbox in the same control family
+const LosslessControl = styledComponent('label', {
+    display: 'flex',
+    flexDirection: 'row' as const,
+    gap: 6,
+    alignItems: 'center' as const,
+    fontSize: 12,
+    color: '#94a3b8',
+    cursor: 'pointer' as const,
+    userSelect: 'none' as const,
+});
+
+// The checkbox itself
+const LosslessCheckbox = styledComponent('input', {
+    accentColor: '#3b82f6',
+    cursor: 'pointer' as const,
+}) as unknown as React.FC<React.InputHTMLAttributes<HTMLInputElement>>;
+
 // ─── Component ───────────────────────────────────────────────────────────────
 // Recomputes the diff on every render — pure and deterministic for a given
-// (first, second, header rows) input triple.
+// (first, second, header rows, lossless) input tuple.
 export const FileCsvDiffView = ({
     first,
     second,
@@ -171,6 +192,10 @@ export const FileCsvDiffView = ({
     // the committed value feeds the diff (invalid/empty → 1).
     const headerRowFirstInput = useStateHook('1');
     const headerRowSecondInput = useStateHook('1');
+    // Lossless comparison — default OFF: values are normalized (trimmed +
+    // numeric canonicalized, "Retired " === "Retired", "12.00" === "12").
+    // ON → strict raw string comparison.
+    const lossless = useToggleHook(false);
     const resolveHeaderRow = (raw: string): number => {
         const parsed = Number.parseInt(raw, 10);
         return Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
@@ -179,6 +204,7 @@ export const FileCsvDiffView = ({
     const result: CsvDiffResult = csvDiff(first.content, second.content, {
         headerRowFirst: resolveHeaderRow(headerRowFirstInput()),
         headerRowSecond: resolveHeaderRow(headerRowSecondInput()),
+        lossless: lossless(),
     });
 
     // Fully identical CSVs → single quiet line
@@ -205,16 +231,27 @@ export const FileCsvDiffView = ({
                             data-testid="csv-diff-header-row-first"
                         />
                     </HeaderRowControl>
-                    <HeaderRowControl>
-                        Header row ({second.name})
-                        <HeaderRowInput
-                            type="number"
-                            min={1}
-                            value={headerRowSecondInput()}
-                            onChange={(event) => headerRowSecondInput(event.target.value)}
-                            data-testid="csv-diff-header-row-second"
-                        />
-                    </HeaderRowControl>
+                <HeaderRowControl>
+                    Header row ({second.name})
+                    <HeaderRowInput
+                        type="number"
+                        min={1}
+                        value={headerRowSecondInput()}
+                        onChange={(event) => headerRowSecondInput(event.target.value)}
+                        data-testid="csv-diff-header-row-second"
+                    />
+                </HeaderRowControl>
+                {/* Lossless toggle — ON = strict raw comparison, OFF
+                    (default) = trimmed + numeric-canonicalized values */}
+                <LosslessControl data-testid="csv-diff-lossless-control">
+                    <LosslessCheckbox
+                        type="checkbox"
+                        checked={lossless()}
+                        onChange={(event) => lossless(event.target.checked)}
+                        data-testid="csv-diff-lossless"
+                    />
+                    Lossless
+                </LosslessControl>
                 </HeaderRowBar>
                 <Muted data-testid="csv-diff-identical">The two CSV files are identical.</Muted>
             </CsvFrame>
@@ -247,6 +284,17 @@ export const FileCsvDiffView = ({
                         data-testid="csv-diff-header-row-second"
                     />
                 </HeaderRowControl>
+                {/* Lossless toggle — ON = strict raw comparison, OFF
+                    (default) = trimmed + numeric-canonicalized values */}
+                <LosslessControl data-testid="csv-diff-lossless-control">
+                    <LosslessCheckbox
+                        type="checkbox"
+                        checked={lossless()}
+                        onChange={(event) => lossless(event.target.checked)}
+                        data-testid="csv-diff-lossless"
+                    />
+                    Lossless
+                </LosslessControl>
             </HeaderRowBar>
 
             {/* Summary — row counts per side */}
@@ -289,50 +337,80 @@ export const FileCsvDiffView = ({
                 </Section>
             ) : null}
 
-            {/* Matched rows — row ↔ row couples with match percent. Rendered
-                whenever any pair exists (even all-100%: with other sections
-                present the coupling information is the report's backbone) */}
-            {result.rowMatches.length > 0 ? (
-                <Section data-testid="csv-diff-matches">
-                    <SectionTitle>Matched rows</SectionTitle>
-                    <MatchTable>
-                        <TableHead>Rows ({first.name} ↔ {second.name})</TableHead>
-                        <TableHead>Match</TableHead>
-                        {result.rowMatches.map((match) => (
-                            <React.Fragment key={`match-${match.rowNumberFirst}`}>
-                                <TableCell data-testid="csv-diff-match-row">
-                                    line {match.rowNumberFirst} ↔ line {match.rowNumberSecond}
-                                </TableCell>
-                                <MatchPercent percent={match.matchPercent}>
-                                    {match.matchPercent}%
-                                </MatchPercent>
-                            </React.Fragment>
-                        ))}
-                    </MatchTable>
-                </Section>
-            ) : null}
-
-            {/* Cell differences — paired rows with differing cell values */}
+            {/* Cell differences — paired rows with differing cell values.
+                The per-couple match percent is merged INTO this table (one
+                table per couple: a "match" line with key + percent + line
+                numbers, then one line per differing cell). Value columns put
+                the SECOND file (green) first, the FIRST file (red) after. */}
             {result.cellDifferences.length > 0 ? (
                 <Section data-testid="csv-diff-cells">
                     <SectionTitle>Cell differences</SectionTitle>
                     <DiffTable>
                         <TableHead>Key</TableHead>
+                        <TableHead>Match</TableHead>
                         <TableHead>Rows</TableHead>
                         <TableHead>Column</TableHead>
-                        <TableHead>{first.name}</TableHead>
                         <TableHead>{second.name}</TableHead>
-                        {result.cellDifferences.map((difference, index) => (
-                            <React.Fragment key={`cell-${index}`}>
-                                <TableCell data-testid="csv-diff-cell-row">{difference.rowKey}</TableCell>
-                                <TableCell>
-                                    {difference.rowNumberFirst} ↔ {difference.rowNumberSecond}
-                                </TableCell>
-                                <TableCell>{difference.column}</TableCell>
-                                <ValueCell side="first">{difference.firstValue === '' ? '(empty)' : difference.firstValue}</ValueCell>
-                                <ValueCell side="second">{difference.secondValue === '' ? '(empty)' : difference.secondValue}</ValueCell>
-                            </React.Fragment>
-                        ))}
+                        <TableHead>{first.name}</TableHead>
+                        {result.cellDifferences.map((difference, index) => {
+                            // First difference of a couple → emit the couple's
+                            // "match" line above the cell line. Differences
+                            // arrive sorted by first-file row number, then
+                            // header order (csvDiff.ts emit phase), so a
+                            // changed Rows pair marks a new couple.
+                            const isNewCouple =
+                                index === 0 ||
+                                difference.rowNumberFirst !==
+                                    result.cellDifferences[index - 1].rowNumberFirst ||
+                                difference.rowNumberSecond !==
+                                    result.cellDifferences[index - 1].rowNumberSecond;
+                            // The couple's match percent comes from the
+                            // rowMatches entry with the same line pair
+                            const matchPercent = result.rowMatches.find(
+                                (match) =>
+                                    match.rowNumberFirst === difference.rowNumberFirst &&
+                                    match.rowNumberSecond === difference.rowNumberSecond,
+                            )?.matchPercent;
+                            return (
+                                <React.Fragment key={`cell-${index}`}>
+                                    {isNewCouple ? (
+                                        <>
+                                            <TableCell data-testid="csv-diff-cell-row">
+                                                {difference.rowKey}
+                                            </TableCell>
+                                            <MatchPercent percent={matchPercent ?? 0} muted>
+                                                {matchPercent ?? 0}%
+                                            </MatchPercent>
+                                            <TableCell>
+                                                {difference.rowNumberFirst} ↔{' '}
+                                                {difference.rowNumberSecond}
+                                            </TableCell>
+                                            {/* Spanner cells keep the grid aligned:
+                                                the match line occupies only the
+                                                first three columns */}
+                                            <TableCell />
+                                            <TableCell />
+                                            <TableCell />
+                                        </>
+                                    ) : (
+                                        <>
+                                            {/* Continuation rows leave the key /
+                                                match / rows columns empty */}
+                                            <TableCell />
+                                            <TableCell />
+                                            <TableCell />
+                                        </>
+                                    )}
+                                    <TableCell>{difference.column}</TableCell>
+                                    <ValueCell side="second">
+                                        {difference.secondValue === '' ? '(empty)' : difference.secondValue}
+                                    </ValueCell>
+                                    <ValueCell side="first">
+                                        {difference.firstValue === '' ? '(empty)' : difference.firstValue}
+                                    </ValueCell>
+                                </React.Fragment>
+                            );
+                        })}
                     </DiffTable>
                 </Section>
             ) : null}

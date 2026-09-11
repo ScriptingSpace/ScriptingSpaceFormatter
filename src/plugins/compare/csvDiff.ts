@@ -32,6 +32,14 @@ import { arrayEach } from '@presource/core';
 // percent; differing cells of a couple are reported per column in
 // `cellDifferences`.
 //
+// VALUE NORMALIZATION (lossless OFF by default): cell values are compared
+// NORMALIZED — leading/trailing whitespace is trimmed ("Retired " ===
+// "Retired") and values that parse as finite numbers are canonicalized to
+// their number form ("12.00" === "12", "007" === "7"). `options.lossless:
+// true` disables normalization → strict raw string comparison. Reported
+// cell differences always carry the RAW (unnormalized) values so the user
+// sees exactly what is in the files.
+//
 // Row numbers in the results are RAW CSV line numbers (header = line 1,
 // first data row = line 2) so they can be looked up directly in the
 // original file.
@@ -97,9 +105,34 @@ export type CsvDiffResult = {
 // AFTER the header row is data; every row BEFORE it is ignored entirely
 // (preamble rows some exports prepend). A value beyond the parsed row count
 // clamps to the last row (header only, no data rows).
+//
+// `lossless` (default false): when false, cell values are normalized before
+// comparison — trimmed, and numeric-looking values canonicalized ("12.00"
+// === "12"). When true, raw string equality is used instead.
 export type CsvDiffOptions = {
     headerRowFirst?: number;
     headerRowSecond?: number;
+    lossless?: boolean;
+};
+
+// ─── Value normalization (lossless OFF) ──────────────────────────────────────
+// 1. Trim leading/trailing whitespace ("Retired " → "Retired").
+// 2. If the trimmed value is a finite number, canonicalize it to its number
+//    form ("12.00" → "12", "007" → "7", "-0" → "0"). Number check uses
+//    Number() over the TRIMMED string so " 12.00 " also canonicalizes;
+//    Number('') is 0 but the empty string must stay '' — guarded by the
+//    trimmed-value emptiness check.
+// Non-numeric values keep their trimmed form. Used ONLY for comparison —
+// reported cell values stay raw.
+const normalizeCellValue = (value: string): string => {
+    const trimmed = value.trim();
+    if (trimmed === '') return '';
+    const asNumber = Number(trimmed);
+    if (Number.isFinite(asNumber) && trimmed !== '') {
+        // String(num) canonicalizes: 12.00 → '12', 007 → '7', -0 → '0'
+        return String(asNumber);
+    }
+    return trimmed;
 };
 
 // ─── CSV parser ──────────────────────────────────────────────────────────────
@@ -220,6 +253,14 @@ export const csvDiff = (
     // matches. Columns missing on one side are reported in the column
     // section, not as per-cell differences. Missing trailing cells (short
     // rows) read as ''.
+    //
+    // Lossless OFF (default) → values are normalized (trimmed + numeric
+    // canonicalized) before comparison; lossless ON → raw equality. Either
+    // way the REPORTED values are the raw ones (firstValue / secondValue
+    // keep the untrimmed originals so the user sees the file content).
+    const compare = options.lossless === true
+        ? (a: string, b: string) => a === b
+        : (a: string, b: string) => normalizeCellValue(a) === normalizeCellValue(b);
     type CsvCouple = {
         firstIndex: number;
         secondIndex: number;
@@ -234,8 +275,13 @@ export const csvDiff = (
             arrayEach(commonColumns, ({ value: column }) => {
                 const firstValue = firstCells[column.firstIndex] ?? '';
                 const secondValue = secondCells[column.secondIndex] ?? '';
-                if (firstValue === secondValue) {
-                    if (firstValue !== '') matched += 1;
+                // Comparison on (possibly normalized) values; the pushed
+                // difference keeps the RAW values for display
+                if (compare(firstValue, secondValue)) {
+                    // Non-empty check uses the same view as the comparison —
+                    // a whitespace-only cell normalizes to '' and must not
+                    // count as a matched non-empty value
+                    if (normalizeCellValue(firstValue) !== '') matched += 1;
                 } else {
                     differences.push({ column: column.name, firstValue, secondValue });
                 }

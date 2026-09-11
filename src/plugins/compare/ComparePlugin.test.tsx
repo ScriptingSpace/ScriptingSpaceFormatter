@@ -241,7 +241,9 @@ describe('comparePlugin — csv comparison', () => {
         expect(summary.textContent).toBe('Summary1beta.csv: 2 data rows2alpha.csv: 2 data rows');
 
         // Cell difference: key '2' paired across the reordered rows —
-        // beta row 2 (2,Bobby) vs alpha row 3 (2,Bob)
+        // beta row 2 (2,Bobby) vs alpha row 3 (2,Bob). The match percent is
+        // merged INTO the cell-differences table (Match column after Key);
+        // the SECOND file (alpha.csv, green) is the first value column.
         const cellRows = Array.from(
             screen.getByTestId('csv-diff-cells').querySelectorAll('[data-testid="csv-diff-cell-row"]'),
         ).map((cell) => cell.textContent);
@@ -249,8 +251,8 @@ describe('comparePlugin — csv comparison', () => {
 
         const cellSection = screen.getByTestId('csv-diff-cells');
         expect(cellSection.textContent).toBe(
-            'Cell differencesKeyRowsColumnbeta.csvalpha.csv2' +
-                '2 ↔ 3nameBobbyBob',
+            'Cell differencesKeyMatchRowsColumnalpha.csvbeta.csv2' +
+                '50%2 ↔ 3nameBobBobby',
         );
 
         // No missing columns / missing rows in this fixture
@@ -368,5 +370,72 @@ describe('comparePlugin — csv comparison', () => {
         });
 
         expect(screen.getByTestId('csv-diff-identical')).toBeDefined();
+    });
+
+    it('treats "Retired " and "12.00" as matching by default (lossless off)', async () => {
+        // Default: normalization trims whitespace and canonicalizes numbers
+        // → no cell differences → identical message
+        render(<FormatterDashboard plugins={defaultPlugins} />);
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [
+                    new File(['id,status,age\n1,Retired ,12.00'], 'norm-a.csv', { type: 'text/csv' }),
+                    new File(['id,status,age\n1,Retired,12'], 'norm-b.csv', { type: 'text/csv' }),
+                ],
+            },
+        });
+        await waitFor(() => {
+            expect(screen.getByTestId('sidebar-file-norm-b.csv')).toBeDefined();
+        });
+        fireEvent.click(screen.getByTestId('sidebar-file-norm-a.csv'));
+        fireEvent.click(screen.getByTestId('content-tab-compare'));
+
+        // Checkbox renders unchecked by default
+        const checkbox = screen.getByTestId('csv-diff-lossless') as HTMLInputElement;
+        expect(checkbox.checked).toBe(false);
+
+        expect(screen.getByTestId('csv-diff-identical')).toBeDefined();
+    });
+
+    it('enabling the Lossless toggle turns normalization off (raw comparison)', async () => {
+        render(<FormatterDashboard plugins={defaultPlugins} />);
+        fireEvent.drop(screen.getByTestId('dashboard-root'), {
+            dataTransfer: {
+                files: [
+                    new File(['id,status,age\n1,Retired ,12.00'], 'norm-a.csv', { type: 'text/csv' }),
+                    new File(['id,status,age\n1,Retired,12'], 'norm-b.csv', { type: 'text/csv' }),
+                ],
+            },
+        });
+        await waitFor(() => {
+            expect(screen.getByTestId('sidebar-file-norm-b.csv')).toBeDefined();
+        });
+        fireEvent.click(screen.getByTestId('sidebar-file-norm-a.csv'));
+        fireEvent.click(screen.getByTestId('content-tab-compare'));
+
+        // Default (lossless off) → identical
+        expect(screen.getByTestId('csv-diff-identical')).toBeDefined();
+
+        // Toggle lossless ON → raw comparison → both cells differ. Both
+        // differences belong to the SAME row couple (key '1') → only one
+        // couple header line exists
+        fireEvent.click(screen.getByTestId('csv-diff-lossless'));
+        expect((screen.getByTestId('csv-diff-lossless') as HTMLInputElement).checked).toBe(true);
+
+        const cellRows = Array.from(
+            screen.getByTestId('csv-diff-cells').querySelectorAll('[data-testid="csv-diff-cell-row"]'),
+        ).map((cell) => cell.textContent);
+        expect(cellRows).toEqual(['1']);
+
+        // Raw values reported: 'Retired ' (untrimmed) and '12.00'.
+        // Selection order: norm-a.csv opened by the drop, norm-b.csv clicked
+        // in after → norm-a.csv = FIRST side, norm-b.csv = SECOND side.
+        // Match 33% (id matches, status + age differ of 3 columns)
+        const cellSection = screen.getByTestId('csv-diff-cells');
+        expect(cellSection.textContent).toBe(
+            'Cell differencesKeyMatchRowsColumnnorm-a.csvnorm-b.csv1' +
+                '33%2 ↔ 2statusRetired Retired' +
+                'age12.0012',
+        );
     });
 });
