@@ -251,7 +251,7 @@ describe('comparePlugin — csv comparison', () => {
 
         const cellSection = screen.getByTestId('csv-diff-cells');
         expect(cellSection.textContent).toBe(
-            'Cell differencesCopy CSVKeyMatchRowsColumnalpha.csvbeta.csv2' +
+            'Cell differences⎘KeyMatchRowsColumnalpha.csvbeta.csv2' +
                 '50%2 ↔ 3nameBobBobby',
         );
 
@@ -434,7 +434,7 @@ describe('comparePlugin — csv comparison', () => {
         // table → every column is filled on BOTH cell rows.
         const cellSection = screen.getByTestId('csv-diff-cells');
         expect(cellSection.textContent).toBe(
-            'Cell differencesCopy CSVKeyMatchRowsColumnnorm-a.csvnorm-b.csv1' +
+            'Cell differences⎘KeyMatchRowsColumnnorm-a.csvnorm-b.csv1' +
                 '33%2 ↔ 2statusRetired Retired' +
                 '133%2 ↔ 2age12.0012',
         );
@@ -468,8 +468,9 @@ describe('comparePlugin — csv comparison', () => {
         fireEvent.click(screen.getByTestId('sidebar-file-copy-a.csv'));
         fireEvent.click(screen.getByTestId('content-tab-compare'));
 
-        // Copy button sits next to the section header, label "Copy CSV"
-        expect(screen.getByTestId('csv-diff-cells-copy').textContent).toBe('Copy CSV');
+        // Copy ICON sits immediately after the section title — clipboard
+        // glyph ⎘, no text label
+        expect(screen.getByTestId('csv-diff-cells-copy').textContent).toBe('⎘');
 
         fireEvent.click(screen.getByTestId('csv-diff-cells-copy'));
 
@@ -487,10 +488,10 @@ describe('comparePlugin — csv comparison', () => {
             ].join('\r\n'),
         ]);
 
-        // Button flips to "Copied" after a successful copy (the async
-        // clipboard promise resolves in a microtask — flush it first)
+        // Icon flips to the checkmark glyph after a successful copy (the
+        // async clipboard promise resolves in a microtask — flush it first)
         await waitFor(() => {
-            expect(screen.getByTestId('csv-diff-cells-copy').textContent).toBe('Copied');
+            expect(screen.getByTestId('csv-diff-cells-copy').textContent).toBe('✓');
         });
     });
 

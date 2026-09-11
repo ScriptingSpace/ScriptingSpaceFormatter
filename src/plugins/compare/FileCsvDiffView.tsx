@@ -222,30 +222,32 @@ const LosslessCheckbox = styledComponent('input', {
     cursor: 'pointer' as const,
 }) as unknown as React.FC<React.InputHTMLAttributes<HTMLInputElement>>;
 
-// Section header strip — title on the left, actions (copy button) on the
-// right. Used by the Cell differences section.
+// Section header strip — title + inline icon button (the copy icon sits
+// immediately AFTER the "Cell differences" title, not pushed to the far
+// right). Used by the Cell differences section.
 const SectionHeader = styledComponent('div', {
     display: 'flex',
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
-    justifyContent: 'space-between' as const,
+    gap: 6,
     marginBottom: 6,
 });
 
-// Copy button — small quiet button matching the shell's control family.
+// Copy icon button — borderless icon-only button hugging the section title.
 // No '&:hover' nesting — styledComponent's input map is a flat CSS
 // property map (PrimaryInput), not an Emotion object-style sheet, so
 // pseudo-selectors are not supported there.
-const CopyButton = styledComponent('button', {
-    padding: '2px 10px',
-    fontSize: 11,
-    fontFamily: 'inherit',
-    borderRadius: 6,
-    border: '1px solid #1e293b',
-    background: '#0f172a',
-    color: '#94a3b8',
+const CopyIconButton = styledComponent('button', {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 2,
+    fontSize: 13,
+    lineHeight: 1,
+    border: 'none',
+    background: 'transparent',
+    color: '#64748b',
     cursor: 'pointer' as const,
-    lineHeight: 1.5,
 }) as unknown as React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>>;
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -458,15 +460,20 @@ export const FileCsvDiffView = ({
                 <Section data-testid="csv-diff-cells">
                     <SectionHeader>
                         <SectionTitle>Cell differences</SectionTitle>
-                        {/* Copy button — serializes the table as CSV (same
+                        {/* Copy icon button — sits immediately after the
+                            section title. Serializes the table as CSV (same
                             columns/order as the on-screen table) and puts it
-                            on the clipboard for pasting elsewhere */}
-                        <CopyButton
+                            on the clipboard for pasting elsewhere. Feedback:
+                            the glyph swaps to a checkmark for a moment. */}
+                        <CopyIconButton
                             data-testid="csv-diff-cells-copy"
                             onClick={copyCellDifferences}
+                            aria-label={copied() ? 'Copied' : 'Copy cell differences as CSV'}
+                            title={copied() ? 'Copied' : 'Copy as CSV'}
                         >
-                            {copied() ? 'Copied' : 'Copy CSV'}
-                        </CopyButton>
+                            {/* Clipboard glyph (⎘) / checkmark (✓) on success */}
+                            {copied() ? '✓' : '⎘'}
+                        </CopyIconButton>
                     </SectionHeader>
                     <DiffTable>
                         <TableHead>Key</TableHead>
