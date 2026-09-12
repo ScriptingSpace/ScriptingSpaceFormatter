@@ -17,9 +17,11 @@ import { csvJoin } from './csvJoin';
 //
 // Layout (FileCsvJoinView): the table is TRANSPOSED — first column = header
 // labels of the first file; EACH file contributes exactly ONE entry column:
-// the raw CSV row picked by that file's head inputs. Each file head carries
-// TWO number inputs (testids csv-join-header-row-<fileIndex> for the header
-// row and csv-join-entry-row-<fileIndex> for the displayed row).
+// the raw CSV row picked by that file's head input. The head strip is
+// UNIFORM — every column head carries one incrementer: the "Header" corner
+// head holds the SEPARATE header-row selector (testid csv-join-header-row,
+// picking the header row FROM THE FIRST FILE), each file head holds its
+// displayed-row selector (csv-join-entry-row-<fileIndex>).
 
 afterEach(() => {
     cleanup();
@@ -155,9 +157,10 @@ describe('compareCsvPlugin', () => {
         expect(labels.map((label) => label.textContent)).toEqual(['id', 'name']);
     });
 
-    it('each file has its OWN header-row input selecting that file header line', async () => {
-        // Both files carry a one-line preamble, but the selectors are
-        // independent: changing file 0's input must NOT touch file 1.
+    it('the SEPARATE header input selects the header row from the FIRST file only', async () => {
+        // Both files carry a one-line preamble. The header selection is ONE
+        // separate input for the first file; the file heads adjust ONLY
+        // their own displayed row.
         // Drop [b, a] → the drop auto-selects pre-a.csv; clicking pre-b.csv
         // toggles it in → activeFileIds = [pre-a, pre-b]
         await dropAndSelect(
@@ -169,8 +172,8 @@ describe('compareCsvPlugin', () => {
         );
         fireEvent.click(screen.getByTestId('content-tab-compareCsv'));
 
-        // Before: raw line 1 is the header in file 0 → the label column
-        // reads the preamble text; each file's DEFAULT entry is its row 2
+        // Default: header row = line 1 → the label column reads the
+        // preamble text; each file's default entry is its line 2
         expect(screen.getAllByTestId('csv-join-header-label').map((l) => l.textContent)).toEqual([
             'preamble',
             '\u00a0',
@@ -182,10 +185,12 @@ describe('compareCsvPlugin', () => {
             'label',
         ]);
 
-        // Change file 0's selector → file 0's header row moves to line 2
-        // AND its default entry slides to line 3; file 1 stays untouched
-        // (header line 1, default entry line 2)
-        fireEvent.change(screen.getByTestId('csv-join-header-row-0'), {
+        // Change the SEPARATE header input → the FIRST file's header row
+        // moves to line 2 (labels id/name) AND file 0's default entry
+        // slides to line 3; file 1's displayed row is UNTOUCHED (its
+        // default stays line 2 — preamble rows after line 1 are picked
+        // through its own head input)
+        fireEvent.change(screen.getByTestId('csv-join-header-row'), {
             target: { value: '2' },
         });
         expect(screen.getAllByTestId('csv-join-header-label').map((l) => l.textContent)).toEqual([
@@ -201,10 +206,10 @@ describe('compareCsvPlugin', () => {
             'label',
         ]);
 
-        // Change file 1's selector → only b's entry shifts; the Header
-        // column (file 0) stays untouched
-        fireEvent.change(screen.getByTestId('csv-join-header-row-1'), {
-            target: { value: '2' },
+        // File 1's head input adjusts ONLY its own displayed row (raw
+        // line 3 = its first data row after the preamble)
+        fireEvent.change(screen.getByTestId('csv-join-entry-row-1'), {
+            target: { value: '3' },
         });
         expect(screen.getAllByTestId('csv-join-header-label').map((l) => l.textContent)).toEqual([
             'id',
@@ -266,6 +271,18 @@ describe('compareCsvPlugin', () => {
             '2',
             '2',
             'Bob',
+            'Robert',
+        ]);
+
+        // Entry row BEYOND the file's rows → that file's column renders
+        // BLANK (nbsp cells); the other file is untouched
+        fireEvent.change(screen.getByTestId('csv-join-entry-row-0'), {
+            target: { value: '99' },
+        });
+        expect(screen.getAllByTestId('csv-join-cell').map((c) => c.textContent)).toEqual([
+            '\u00a0',
+            '2',
+            '\u00a0',
             'Robert',
         ]);
     });

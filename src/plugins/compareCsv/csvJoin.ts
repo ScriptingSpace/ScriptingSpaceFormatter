@@ -29,11 +29,13 @@ import { parseCsv } from '../differenceCsv/csvDiff';
 //   (header only, no data).
 // - `options.entryRows[i]` — which raw line of file i is DISPLAYED as its
 //   single entry column. Default: headerIndex + 1 (first data row). An
-//   explicit value clamps to [1, rowCount] — selecting the header row or a
-//   preamble row is allowed deliberately (it is still "a row of that file").
+//   explicit value may point at the header row or a preamble row (it is
+//   still "a row of that file"); a value BELOW 1 clamps to line 1. A value
+//   BEYOND the file's parsed row count does NOT clamp — the entry index
+//   simply points past the rows and the entry renders BLANK (empty).
 //   When the header row clamps to a file's LAST row there is no data row
 //   after it, so the default entry index falls PAST the last row and the
-//   entry renders empty.
+//   entry renders empty too.
 
 // One file's aligned contribution.
 export type CsvJoinFile = {
@@ -51,7 +53,8 @@ export type CsvJoinFile = {
     entryIndex: number;
     // The SINGLE entry the viewer renders for this file — the raw row picked
     // by options.entryRows[i] (default: the first row after the header row).
-    // Shorter than the header list → the viewer pads blank cells.
+    // Shorter than the header list → the viewer pads blank cells; the row
+    // index past the parsed rows → [] → the whole column renders blank.
     entry: string[];
 };
 
@@ -86,15 +89,17 @@ const resolveHeaderIndex = (rowCount: number, requested: number | undefined): nu
 // Displayed-entry index resolution: undefined / non-finite → the first row
 // AFTER the header row (headerIndex + 1 — which may equal rowCount when the
 // header row is the last row; the viewer then renders an empty entry). An
-// explicit 1-based value clamps to [1, rowCount] — pointing at the header
-// row or a preamble row is deliberate and allowed.
+// explicit 1-based value clamps only at the BOTTOM (below 1 → line 1) —
+// pointing at the header row or a preamble row is deliberate and allowed.
+// There is NO upper clamp: a value beyond the file's parsed row count
+// leaves the index past the rows and `entry` resolves to [] (BLANK
+// column) — the entry row can go beyond the rows available.
 const resolveEntryIndex = (
-    rowCount: number,
     headerIndex: number,
     requested: number | undefined,
 ): number => {
     if (requested === undefined || !Number.isFinite(requested)) return headerIndex + 1;
-    return Math.min(Math.max(Math.floor(requested) - 1, 0), Math.max(rowCount - 1, 0));
+    return Math.max(Math.floor(requested) - 1, 0);
 };
 
 export const csvJoin = (
@@ -111,9 +116,10 @@ export const csvJoin = (
     );
 
     // Per-file DISPLAYED-entry index — defaults to the first row after the
-    // file's header row; explicit values clamp to the file's parsed rows
+    // file's header row; explicit values clamp only at the bottom (beyond
+    // the row count → index past the rows → BLANK entry)
     const entryIndices = parsedRows.map((rows, fileIndex) =>
-        resolveEntryIndex(rows.length, headerIndices[fileIndex], options.entryRows?.[fileIndex]),
+        resolveEntryIndex(headerIndices[fileIndex], options.entryRows?.[fileIndex]),
     );
 
     // The table's "Header" column comes from the FIRST file only (its

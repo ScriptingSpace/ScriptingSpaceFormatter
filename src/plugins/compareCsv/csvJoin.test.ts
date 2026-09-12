@@ -257,7 +257,9 @@ describe('csvJoin', () => {
         });
     });
 
-    it('entryRows beyond the row count clamp to the last row', () => {
+    it('entryRows beyond the row count render the entry BLANK (no upper clamp)', () => {
+        // The entry row can go beyond the rows available — the index points
+        // past the parsed rows and the entry resolves to [] (blank column)
         const result = csvJoin([{ name: 'a.csv', content: 'id,name\n1,Ann\n2,Bob' }], {
             entryRows: [99],
         });
@@ -265,8 +267,8 @@ describe('csvJoin', () => {
             name: 'a.csv',
             headers: ['id', 'name'],
             columns: [['1', 'Ann'], ['2', 'Bob']],
-            entryIndex: 2,
-            entry: ['2', 'Bob'],
+            entryIndex: 98,
+            entry: [],
         });
     });
 
