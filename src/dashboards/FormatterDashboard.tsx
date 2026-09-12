@@ -576,9 +576,11 @@ const DashboardShell = ({ plugins }: { plugins: DashboardPlugin[] }) => {
           : null;
 
     // ── Plugin execution: selection hook ──
-    // Fires ONLY when two or more files are selected. Plugins hooked into
+    // Fires when ONE OR MORE files are selected. Plugins hooked into
     // renderSelection contribute extra content tabs that mount AFTER the
-    // focused file's plugin tabs (e.g. the compare plugin's "Compare" tab).
+    // focused file's plugin tabs (e.g. the compare plugin's "Compare" tab —
+    // it self-gates to two or more files — or the csvJoin plugin's "CSV
+    // join" tab, which accepts even a single file).
     const selectionContext = {
         files,
         activeFileIds,
@@ -587,7 +589,7 @@ const DashboardShell = ({ plugins }: { plugins: DashboardPlugin[] }) => {
         focusedFile: activeFile,
     };
     const selectionRendered: { pluginId: string; label: string; node: React.ReactNode }[] = [];
-    if (activeFileIds.length >= 2) {
+    if (activeFileIds.length >= 1) {
         arrayEach(plugins, ({ value: plugin }) => {
             if (!plugin.renderSelection) return;
             const node = plugin.renderSelection(selectionContext);
@@ -737,16 +739,28 @@ const DashboardShell = ({ plugins }: { plugins: DashboardPlugin[] }) => {
                         // placeholder
                         null
                     ) : activeFileIds.length <= 1 ? (
-                        rendered.length === 1 ? (
-                            rendered[0].node
-                        ) : (
+                        // Single selection: the focused file's plugin tabs
+                        // PLUS any selection-level tabs (e.g. csvJoin, which
+                        // accepts a single file) share one merged tab list —
+                        // identical structure to the multi-select branch
+                        // below. ONE contributor total → direct render with
+                        // no tab bar (the original single-plugin contract);
+                        // two or more → tabs.
+                        rendered.length + selectionRendered.length === 1 ? (
+                            (rendered[0]?.node ?? selectionRendered[0].node)
+                        ) : rendered.length + selectionRendered.length > 1 ? (
                             <ContentTabs data-testid="content-tabs">
                                 <TabBar>
-                                    {rendered.map(({ pluginId, label }) => (
+                                    {rendered.concat(selectionRendered).map(({ pluginId, label }) => (
                                         <TabButton
                                             key={pluginId}
                                             type="button"
-                                            active={pluginId === visibleId}
+                                            active={
+                                                pluginId ===
+                                                (selectionRendered.length > 0
+                                                    ? visibleSelectionId
+                                                    : visibleId)
+                                            }
                                             onClick={() => selectedTab(pluginId)}
                                             data-testid={`content-tab-${pluginId}`}
                                         >
@@ -755,11 +769,20 @@ const DashboardShell = ({ plugins }: { plugins: DashboardPlugin[] }) => {
                                     ))}
                                 </TabBar>
                                 {/* Only the active plugin's node is mounted */}
-                                <TabPanel data-testid={`content-tab-panel-${visibleId}`}>
-                                    {rendered.find((entry) => entry.pluginId === visibleId)?.node}
+                                <TabPanel
+                                    data-testid={`content-tab-panel-${
+                                        selectionRendered.length > 0 ? visibleSelectionId : visibleId
+                                    }`}
+                                >
+                                    {(selectionRendered.length > 0
+                                        ? allTabs.find(
+                                              (entry) => entry.pluginId === visibleSelectionId,
+                                          )
+                                        : rendered.find((entry) => entry.pluginId === visibleId)
+                                    )?.node}
                                 </TabPanel>
                             </ContentTabs>
-                        )
+                        ) : null
                     ) : (
                         <FileOptions data-testid="file-options">
                             <FileOptionBar data-testid="file-option-bar">

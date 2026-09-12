@@ -7,6 +7,7 @@ export * from './content';
 export * from './pdfReader';
 export * from './compare';
 export * from './yaml';
+export * from './csvJoin';
 import { fileReaderPlugin } from './fileReader';
 import { headerPlugin } from './header';
 import { exportPdfPlugin } from './exportPdf';
@@ -18,6 +19,7 @@ import { pdfReaderPlugin } from './pdfReader';
 import { binaryPlugin } from './content/BinaryPlugin';
 import { comparePlugin } from './compare';
 import { yamlPlugin } from './yaml';
+import { csvJoinPlugin } from './csvJoin';
 import type { DashboardPlugin } from './core';
 
 // Default plugin sequence — the order IS the execution order:
@@ -31,9 +33,9 @@ import type { DashboardPlugin } from './core';
 //    sequence renders directly — tabs only appear when the yaml plugin ALSO
 //    contributes for the same file (an OpenAPI/Swagger document gets both a
 //    Text tab and its spec tab).
-// 5. renderSelection hooks run last (compare) — the compare tab mounts AFTER
-//    the focused file's plugin tabs, exactly when two or more files are
-//    selected.
+// 5. renderSelection hooks run last (compare, csvJoin) — their tabs mount
+//    AFTER the focused file's plugin tabs. compare needs two or more files;
+//    csvJoin accepts any selection of all-CSV files (even one).
 export const defaultPlugins: DashboardPlugin[] = [
     fileReaderPlugin,
     headerPlugin,
@@ -46,4 +48,5 @@ export const defaultPlugins: DashboardPlugin[] = [
     binaryPlugin,
     comparePlugin,
     yamlPlugin,
+    csvJoinPlugin,
 ];

@@ -1,6 +1,6 @@
 {
     "name": "@scripting-space/formatter",
-    "version": "1.0.9",
+    "version": "1.0.10",
     "description": "Scripting Space Formatter — plug-and-play dashboard that accepts dropped files into a sidebar; the left content pane is reserved for future formatting output",
     "type": "module",
     "main": "lib/index.js",
@@ -9,21 +9,31 @@
         ".": {
             "types": "./lib/index.d.ts",
             "import": "./lib/index.js"
-        }
+        },
+        "./app": "./bin/formatter.js"
+    },
+    "bin": {
+        "formatter-dashboard": "bin/formatter.js"
     },
     "files": [
+        "bin",
         "lib"
     ],
     "sideEffects": false,
+    "engines": {
+        "node": ">=18"
+    },
     "scripts": {
         "dev": "vite",
         "build": "vite build",
         "build:lib": "tsc -p tsconfig.build.json",
         "prepublishOnly": "vitest run && tsc --noEmit && tsc -p tsconfig.build.json",
         "preview": "vite preview",
+        "start": "node bin/formatter.js",
         "test": "vitest run",
         "test:watch": "vitest",
-        "typecheck": "tsc --noEmit"
+        "typecheck": "tsc --noEmit",
+        "deploy": "vite build && gh-pages -d dist"
     },
     "author": "NQQT",
     "license": "ISC",
@@ -47,6 +57,7 @@
         "@types/react": "^18.2.0",
         "@types/react-dom": "^18.2.0",
         "@vitejs/plugin-react": "^6.0.1",
+        "gh-pages": "^6.3.0",
         "jsdom": "^29.0.2",
         "react": "^18.2.0",
         "react-dom": "^18.2.0",
