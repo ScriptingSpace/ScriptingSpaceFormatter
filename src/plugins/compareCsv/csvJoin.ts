@@ -12,18 +12,28 @@ import { parseCsv } from '../differenceCsv/csvDiff';
 //
 // - The FIRST file's selected header row becomes the "Header" COLUMN (one
 //   table row per header cell) — cross-reference: FileCsvJoinView.tsx.
-// - Each DATA ENTRY (raw CSV row after that file's header row) becomes one
-//   COLUMN of the table, its cells aligned with the header labels by index.
-// - A second file's entries take the NEXT columns, files laid out left to
-//   right in input order. NO row matching / scoring happens here (unlike
-//   csvDiff.ts) — the join is positional per file.
-// - One file alone is valid (the viewer then shows its entries as columns).
+// - EACH file contributes exactly ONE displayed ENTRY COLUMN: the raw CSV
+//   row picked by `options.entryRows[i]` (default: the first row after that
+//   file's header row). Cells align with the header labels by index.
+// - The full entry list is still returned per file (`columns`) — the viewer
+//   renders only `entry`, the row its head selector points at.
+// - NO row matching / scoring happens here (unlike csvDiff.ts) — the join
+//   is positional per file.
+// - One file alone is valid (the viewer then shows its single entry column).
 //
-// The header row is selected PER FILE: `options.headerRows[i]` selects which
-// raw CSV line is the header row in file i (1-based; default 1). Rows BEFORE
-// it are ignored (preamble); rows AFTER it are data entries. Per-file
-// clamping follows csvDiff.ts's resolveHeaderIndex: a value beyond a file's
-// parsed row count clamps to that file's last row (header only, no data).
+// PER-FILE row selection (both 1-based raw CSV line numbers):
+// - `options.headerRows[i]` — which raw line is file i's HEADER row. Rows
+//   BEFORE it are ignored (preamble); rows AFTER it are data entries.
+//   Per-file clamping follows csvDiff.ts's resolveHeaderIndex: a value
+//   beyond a file's parsed row count clamps to that file's last row
+//   (header only, no data).
+// - `options.entryRows[i]` — which raw line of file i is DISPLAYED as its
+//   single entry column. Default: headerIndex + 1 (first data row). An
+//   explicit value clamps to [1, rowCount] — selecting the header row or a
+//   preamble row is allowed deliberately (it is still "a row of that file").
+//   When the header row clamps to a file's LAST row there is no data row
+//   after it, so the default entry index falls PAST the last row and the
+//   entry renders empty.
 
 // One file's aligned contribution.
 export type CsvJoinFile = {
@@ -33,10 +43,16 @@ export type CsvJoinFile = {
     // label the table rows; later files' header rows only mark where their
     // data starts (their labels are not rendered).
     headers: string[];
-    // The file's data entries (rows after its header row), in file order.
-    // Each entry is one COLUMN of the aligned table: entry[k][j] is the
-    // value under header-label j.
+    // The file's data entries (all raw rows after its header row), in file
+    // order. Each entry is one potential COLUMN of the aligned table:
+    // entry[k][j] is the value under header-label j.
     columns: string[][];
+    // 0-based raw row index of the DISPLAYED entry (see `entry` below)
+    entryIndex: number;
+    // The SINGLE entry the viewer renders for this file — the raw row picked
+    // by options.entryRows[i] (default: the first row after the header row).
+    // Shorter than the header list → the viewer pads blank cells.
+    entry: string[];
 };
 
 // Full join result.
@@ -50,9 +66,11 @@ export type CsvJoinResult = {
 
 // Join options. `headerRows[i]` selects WHICH raw CSV line is the header row
 // in file i (1-based; default 1) — one selector PER FILE, aligned by index
-// with the files array (the viewer renders one input box per file column).
+// with the files array. `entryRows[i]` selects WHICH raw line of file i is
+// displayed as its single entry column (default: first row after the header).
 export type CsvJoinOptions = {
     headerRows?: (number | undefined)[];
+    entryRows?: (number | undefined)[];
 };
 
 // Header-row index resolution — same contract as csvDiff.ts's
@@ -62,6 +80,20 @@ export type CsvJoinOptions = {
 // clamps to the last row (header only, no data rows).
 const resolveHeaderIndex = (rowCount: number, requested: number | undefined): number => {
     if (requested === undefined || !Number.isFinite(requested)) return 0;
+    return Math.min(Math.max(Math.floor(requested) - 1, 0), Math.max(rowCount - 1, 0));
+};
+
+// Displayed-entry index resolution: undefined / non-finite → the first row
+// AFTER the header row (headerIndex + 1 — which may equal rowCount when the
+// header row is the last row; the viewer then renders an empty entry). An
+// explicit 1-based value clamps to [1, rowCount] — pointing at the header
+// row or a preamble row is deliberate and allowed.
+const resolveEntryIndex = (
+    rowCount: number,
+    headerIndex: number,
+    requested: number | undefined,
+): number => {
+    if (requested === undefined || !Number.isFinite(requested)) return headerIndex + 1;
     return Math.min(Math.max(Math.floor(requested) - 1, 0), Math.max(rowCount - 1, 0));
 };
 
@@ -78,20 +110,29 @@ export const csvJoin = (
         resolveHeaderIndex(rows.length, options.headerRows?.[fileIndex]),
     );
 
+    // Per-file DISPLAYED-entry index — defaults to the first row after the
+    // file's header row; explicit values clamp to the file's parsed rows
+    const entryIndices = parsedRows.map((rows, fileIndex) =>
+        resolveEntryIndex(rows.length, headerIndices[fileIndex], options.entryRows?.[fileIndex]),
+    );
+
     // The table's "Header" column comes from the FIRST file only (its
     // clamped header row); later files' header rows stay per-file in the
     // result but do not label the table
     const headers = parsedRows[0]?.[headerIndices[0]] ?? [];
 
     // Per file: its header row + everything AFTER it as data entries, in
-    // file order. Each entry (parsed row) is kept as one COLUMN — the viewer
-    // lays entries out left to right, cells aligned with the header labels.
+    // file order. `entry` is the SINGLE row the viewer renders for this file
+    // (missing past the end → [] so the viewer pads blank cells).
     const joinedFiles: CsvJoinFile[] = files.map((file, fileIndex) => {
         const headerIndex = headerIndices[fileIndex];
+        const entryIndex = entryIndices[fileIndex];
         return {
             name: file.name,
             headers: parsedRows[fileIndex][headerIndex] ?? [],
             columns: parsedRows[fileIndex].slice(headerIndex + 1),
+            entryIndex,
+            entry: parsedRows[fileIndex][entryIndex] ?? [],
         };
     });
 

@@ -13,9 +13,11 @@ import { FileCsvJoinView } from './FileCsvJoinView';
 // viewer accepts ANY selection size — even a single file — as long as every
 // selected file is CSV. Layout (FileCsvJoinView): the FIRST file's selected
 // header row forms the left "Header" column (one table row per header
-// cell); every file's data ENTRIES then become columns grouped under that
-// file's head, left to right. EACH file's head carries its own header-row
-// input selecting which raw CSV line is that file's header row.
+// cell); EACH file then contributes exactly ONE entry column — the raw CSV
+// row picked by that file's head selectors ("each file can only display one
+// entry row on the UI"). EACH file's head carries TWO inputs: which raw
+// line is that file's header row, and which raw line of that file is
+// displayed as its single entry row.
 //
 // Gate: every selected file must be CSV (text kind + .csv extension,
 // case-insensitive — same predicate as differenceCsvPlugin's isCsvFile). Any

@@ -16,9 +16,10 @@ import { csvJoin } from './csvJoin';
 // the FIRST-selected file's selected header row donates the "Header" column.
 //
 // Layout (FileCsvJoinView): the table is TRANSPOSED — first column = header
-// labels of the first file; each file's data ENTRIES become columns grouped
-// under that file's head, left to right. Each file head carries its own
-// header-row number input (testid csv-join-header-row-<fileIndex>).
+// labels of the first file; EACH file contributes exactly ONE entry column:
+// the raw CSV row picked by that file's head inputs. Each file head carries
+// TWO number inputs (testids csv-join-header-row-<fileIndex> for the header
+// row and csv-join-entry-row-<fileIndex> for the displayed row).
 
 afterEach(() => {
     cleanup();
@@ -51,11 +52,19 @@ describe('compareCsv — pure function', () => {
         ).toEqual({
             headers: ['id', 'name'],
             files: [
-                { name: 'a.csv', headers: ['id', 'name'], columns: [['1', 'Ann'], ['2', 'Bob']] },
+                {
+                    name: 'a.csv',
+                    headers: ['id', 'name'],
+                    columns: [['1', 'Ann'], ['2', 'Bob']],
+                    entryIndex: 1,
+                    entry: ['1', 'Ann'],
+                },
                 {
                     name: 'b.csv',
                     headers: ['key', 'label'],
                     columns: [['1', 'Anna'], ['2', 'Robert']],
+                    entryIndex: 1,
+                    entry: ['1', 'Anna'],
                 },
             ],
         });
@@ -64,7 +73,15 @@ describe('compareCsv — pure function', () => {
     it('accepts a single file', () => {
         expect(csvJoin([{ name: 'solo.csv', content: 'id,name\n1,Ann' }])).toEqual({
             headers: ['id', 'name'],
-            files: [{ name: 'solo.csv', headers: ['id', 'name'], columns: [['1', 'Ann']] }],
+            files: [
+                {
+                    name: 'solo.csv',
+                    headers: ['id', 'name'],
+                    columns: [['1', 'Ann']],
+                    entryIndex: 1,
+                    entry: ['1', 'Ann'],
+                },
+            ],
         });
     });
 });
@@ -84,7 +101,7 @@ describe('compareCsvPlugin', () => {
         expect(screen.queryByTestId('file-csv-join-plugin')).toBeNull();
     });
 
-    it('joins a SINGLE csv file (header column + one entry column per data row)', async () => {
+    it('joins a SINGLE csv file (header column + ONE default entry column)', async () => {
         await dropAndSelect(
             [new File(['id,name\n1,Ann\n2,Bob'], 'solo.csv', { type: 'text/csv' })],
             [],
@@ -96,16 +113,21 @@ describe('compareCsvPlugin', () => {
         fireEvent.click(screen.getByTestId('content-tab-compareCsv'));
 
         // Corner cell + file head; one row per header label, the file's
-        // entries as columns: row 'id' → 1, 2; row 'name' → Ann, Bob
+        // DEFAULT entry (first data row) as its single column:
+        // row 'id' → 1; row 'name' → Ann
         expect(screen.getByTestId('csv-join-table').textContent).toBe(
-            'Headersolo.csvid12nameAnnBob',
+            'Headersolo.csvid1nameAnn',
         );
         // Left column carries the FIRST (only) file's headers
         const labels = screen.getAllByTestId('csv-join-header-label');
         expect(labels.map((label) => label.textContent)).toEqual(['id', 'name']);
-        // One value cell per table row per entry column (row-major)
+        // ONE value cell per table row (one entry column per file)
         const cells = screen.getAllByTestId('csv-join-cell');
-        expect(cells.map((cell) => cell.textContent)).toEqual(['1', '2', 'Ann', 'Bob']);
+        expect(cells.map((cell) => cell.textContent)).toEqual(['1', 'Ann']);
+        // The entry input displays the DEFAULT selection (raw line 2 =
+        // entryIndex 1 + 1)
+        const entryInput = screen.getByTestId('csv-join-entry-row-0') as HTMLInputElement;
+        expect(entryInput.value).toBe('2');
     });
 
     it('joins two csv files with the first-selected file headers on the left', async () => {
@@ -122,10 +144,10 @@ describe('compareCsvPlugin', () => {
         fireEvent.click(screen.getByTestId('content-tab-compareCsv'));
 
         // Corner cell reads "Header"; file heads in selection order. Each
-        // file's entries become columns: row 'id' reads a's 1, 2 then b's
-        // 1, 2, 3; row 'name' reads Ann, Bob, Anna, Robert, Zed.
+        // file shows ONE default entry (its first data row): row 'id' reads
+        // a's 1 then b's 1; row 'name' reads Ann then Anna.
         expect(screen.getByTestId('csv-join-table').textContent).toBe(
-            'Headerjoin-a.csvjoin-b.csvid12123nameAnnBobAnnaRobertZed',
+            'Headerjoin-a.csvjoin-b.csvid11nameAnnAnna',
         );
         // Left column = FIRST file's headers ONLY — b.csv's key/label
         // headers are not rendered
@@ -148,14 +170,21 @@ describe('compareCsvPlugin', () => {
         fireEvent.click(screen.getByTestId('content-tab-compareCsv'));
 
         // Before: raw line 1 is the header in file 0 → the label column
-        // reads the preamble text
+        // reads the preamble text; each file's DEFAULT entry is its row 2
         expect(screen.getAllByTestId('csv-join-header-label').map((l) => l.textContent)).toEqual([
             'preamble',
             '\u00a0',
         ]);
+        expect(screen.getAllByTestId('csv-join-cell').map((c) => c.textContent)).toEqual([
+            'id',
+            'key',
+            'name',
+            'label',
+        ]);
 
-        // Change file 0's selector → file 0's header row moves to line 2;
-        // file 1's data start stays on its preamble row (header line 1)
+        // Change file 0's selector → file 0's header row moves to line 2
+        // AND its default entry slides to line 3; file 1 stays untouched
+        // (header line 1, default entry line 2)
         fireEvent.change(screen.getByTestId('csv-join-header-row-0'), {
             target: { value: '2' },
         });
@@ -163,19 +192,16 @@ describe('compareCsvPlugin', () => {
             'id',
             'name',
         ]);
-        // Row-major cells: row 'id' → a '1', b 'key', '1'; row 'name' →
-        // a 'Ann', b 'label', 'Anna' (b's entries still start after ITS
-        // line-1 header)
+        // Row-major cells: row 'id' → a '1', b 'key'; row 'name' →
+        // a 'Ann', b 'label'
         expect(screen.getAllByTestId('csv-join-cell').map((c) => c.textContent)).toEqual([
             '1',
             'key',
-            '1',
             'Ann',
             'label',
-            'Anna',
         ]);
 
-        // Change file 1's selector → only b's entries shift; the Header
+        // Change file 1's selector → only b's entry shifts; the Header
         // column (file 0) stays untouched
         fireEvent.change(screen.getByTestId('csv-join-header-row-1'), {
             target: { value: '2' },
@@ -192,16 +218,68 @@ describe('compareCsvPlugin', () => {
         ]);
     });
 
+    it('each file head has an ENTRY selector changing which row of that file is displayed', async () => {
+        // Each file carries TWO data rows; the entry selector picks which
+        // ONE is shown per file. Drop [b, a] → activeFileIds = [a, b]
+        await dropAndSelect(
+            [
+                new File(['key,label\n1,Anna\n2,Robert'], 'ent-b.csv', { type: 'text/csv' }),
+                new File(['id,name\n1,Ann\n2,Bob'], 'ent-a.csv', { type: 'text/csv' }),
+            ],
+            ['ent-b.csv'],
+        );
+        fireEvent.click(screen.getByTestId('content-tab-compareCsv'));
+
+        // Default: each file shows its FIRST data row (raw line 2) — the
+        // entry inputs DISPLAY that default (entryIndex + 1 = 2)
+        expect(screen.getAllByTestId('csv-join-cell').map((c) => c.textContent)).toEqual([
+            '1',
+            '1',
+            'Ann',
+            'Anna',
+        ]);
+        expect((screen.getByTestId('csv-join-entry-row-0') as HTMLInputElement).value).toBe('2');
+        expect((screen.getByTestId('csv-join-entry-row-1') as HTMLInputElement).value).toBe('2');
+
+        // Change file 1's entry selector → only b's displayed row moves
+        // (raw line 3 = b's second data row)
+        fireEvent.change(screen.getByTestId('csv-join-entry-row-1'), {
+            target: { value: '3' },
+        });
+        expect(screen.getAllByTestId('csv-join-cell').map((c) => c.textContent)).toEqual([
+            '1',
+            '2',
+            'Ann',
+            'Robert',
+        ]);
+
+        // Change file 0's entry selector → only a's displayed row moves;
+        // the header labels stay untouched
+        fireEvent.change(screen.getByTestId('csv-join-entry-row-0'), {
+            target: { value: '3' },
+        });
+        expect(screen.getAllByTestId('csv-join-header-label').map((l) => l.textContent)).toEqual([
+            'id',
+            'name',
+        ]);
+        expect(screen.getAllByTestId('csv-join-cell').map((c) => c.textContent)).toEqual([
+            '2',
+            '2',
+            'Bob',
+            'Robert',
+        ]);
+    });
+
     it('cross-highlights same-value cells in a row on hover', async () => {
-        // Fixture: table row 'id' holds value '9' in BOTH files (a's entry 1
-        // and b's entry 2) → hovering one highlights the other. The 'Y'
-        // values sit in row 'name' and have no same-row counterpart when a
+        // Fixture: table row 'id' holds value '9' in BOTH files (each file
+        // shows ONE entry) → hovering one highlights the other. The 'X'
+        // value sits in row 'name' and has no same-row counterpart when a
         // '9' is hovered.
         // Drop [b, a] → the drop auto-selects hovj-a.csv; clicking hovj-b.csv
         // toggles it in → activeFileIds = [hovj-a, hovj-b]
         await dropAndSelect(
             [
-                new File(['key,label\n1,9\n2,Y'], 'hovj-b.csv', { type: 'text/csv' }),
+                new File(['key,label\n9,Anna\n2,Y'], 'hovj-b.csv', { type: 'text/csv' }),
                 new File(['id,name\n9,X\n2,Y'], 'hovj-a.csv', { type: 'text/csv' }),
             ],
             ['hovj-b.csv'],
@@ -213,23 +291,23 @@ describe('compareCsvPlugin', () => {
             Array.from(table.querySelectorAll('span')).filter(
                 (span) => span.textContent === text,
             );
-        // '9' appears as: row 'id' a-entry-1 cell, row 'id' b-entry-2 cell.
+        // '9' appears as: row 'id' a-entry cell, row 'id' b-entry cell.
         // Two value cells.
         const nineCells = spansWithText('9');
         expect(nineCells).toHaveLength(2);
-        const yCell = spansWithText('Y')[0];
+        const xCell = spansWithText('X')[0];
 
         // Before any hover: no highlight on any value cell
         expect(nineCells[0].style.background).toBe('');
         expect(nineCells[1].style.background).toBe('');
-        expect(yCell.style.background).toBe('');
+        expect(xCell.style.background).toBe('');
 
         // Hover the first '9' (a, row 'id') → hovered tint on it, MATCHED
-        // tint on the second '9' (b, row 'id'). 'Y' stays unhighlighted.
+        // tint on the second '9' (b, row 'id'). 'X' stays unhighlighted.
         fireEvent.mouseEnter(nineCells[0]);
         expect(nineCells[0].style.background).toBe('rgba(148, 163, 184, 0.25)');
         expect(nineCells[1].style.background).toBe('rgba(59, 130, 246, 0.25)');
-        expect(yCell.style.background).toBe('');
+        expect(xCell.style.background).toBe('');
 
         // Mouse leaves → both highlights clear
         fireEvent.mouseLeave(nineCells[0]);
