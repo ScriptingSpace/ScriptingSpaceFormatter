@@ -578,9 +578,9 @@ const DashboardShell = ({ plugins }: { plugins: DashboardPlugin[] }) => {
     // ── Plugin execution: selection hook ──
     // Fires when ONE OR MORE files are selected. Plugins hooked into
     // renderSelection contribute extra content tabs that mount AFTER the
-    // focused file's plugin tabs (e.g. the compare plugin's "Compare" tab —
-    // it self-gates to two or more files — or the csvJoin plugin's "CSV
-    // join" tab, which accepts even a single file).
+    // focused file's plugin tabs (e.g. the differenceCsv plugin's
+    // "Difference" tab — it self-gates to two or more files — or the
+    // compareCsv plugin's "Compare" tab, which accepts even a single file).
     const selectionContext = {
         files,
         activeFileIds,
@@ -722,7 +722,7 @@ const DashboardShell = ({ plugins }: { plugins: DashboardPlugin[] }) => {
                         plugins contribute for the focused file — the tab
                         layout nests INSIDE the focused file's panel.
                         Selection-level tabs (renderSelection, e.g. the
-                        compare plugin's "Compare" tab) mount AFTER the
+                        differenceCsv plugin's "Difference" tab) mount AFTER the
                         focused file's plugin tabs — only while two or more
                         files are selected. */}
                     {rendered.length === 0 &&
@@ -740,7 +740,7 @@ const DashboardShell = ({ plugins }: { plugins: DashboardPlugin[] }) => {
                         null
                     ) : activeFileIds.length <= 1 ? (
                         // Single selection: the focused file's plugin tabs
-                        // PLUS any selection-level tabs (e.g. csvJoin, which
+                        // PLUS any selection-level tabs (e.g. compareCsv, which
                         // accepts a single file) share one merged tab list —
                         // identical structure to the multi-select branch
                         // below. ONE contributor total → direct render with
@@ -813,7 +813,7 @@ const DashboardShell = ({ plugins }: { plugins: DashboardPlugin[] }) => {
                                 the panel — with the same single/tabs split as
                                 the single-select view above. Selection-level
                                 contributions (renderSelection, e.g. the
-                                compare plugin) mount as EXTRA tabs AFTER the
+                                differenceCsv plugin) mount as EXTRA tabs AFTER the
                                 focused file's plugin tabs, exactly when two
                                 or more files are selected. */}
                             <FileOptionPanel data-testid={`file-option-panel-${focusedName}`}>

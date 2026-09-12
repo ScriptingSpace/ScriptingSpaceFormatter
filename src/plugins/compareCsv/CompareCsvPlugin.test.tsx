@@ -5,12 +5,12 @@ import { FormatterDashboard } from '../../dashboards/FormatterDashboard';
 import { defaultPlugins } from '../../plugins';
 import { csvJoin } from './csvJoin';
 
-// ─── CSV JOIN PLUGIN — integration tests through the real dashboard ─────────
-// The csvJoin plugin hooks `renderSelection`, which the dashboard fires when
+// ─── COMPARE CSV PLUGIN — integration tests through the real dashboard ──────
+// The compareCsv plugin hooks `renderSelection`, which the dashboard fires when
 // ONE OR MORE sidebar files are selected. The tab mounts AFTER the focused
-// file's plugin tabs (tab label "CSV join").
+// file's plugin tabs (tab label "Compare").
 //
-// Selection order semantics (cross-reference: ComparePlugin.test.tsx): the
+// Selection order semantics (cross-reference: DifferenceCsvPlugin.test.tsx): the
 // file dropped first is selected by the drop; clicking another sidebar file
 // TOGGLES it into the selection. activeFileIds order = selection order —
 // the FIRST-selected file's selected header row donates the "Header" column.
@@ -41,7 +41,7 @@ const dropAndSelect = async (files: File[], clickNames: string[]) => {
     });
 };
 
-describe('csvJoin — pure function', () => {
+describe('compareCsv — pure function', () => {
     it('joins two files TRANSPOSED with the FIRST file headers labeling the rows', () => {
         expect(
             csvJoin([
@@ -69,9 +69,9 @@ describe('csvJoin — pure function', () => {
     });
 });
 
-describe('csvJoinPlugin', () => {
-    it('shows no CSV join tab when the selection is not all CSV', async () => {
-        // One .txt + one .csv selected → the all-CSV gate rejects the tab
+describe('compareCsvPlugin', () => {
+    it('shows no Compare tab when the selection is not all CSV', async () => {
+        // One .txt + one .csv selected → the all-CSV gate rejects the tab; the Difference tab (text+csv) is clicked to focus it
         await dropAndSelect(
             [
                 new File(['plain'], 'plain.txt', { type: 'text/plain' }),
@@ -79,8 +79,8 @@ describe('csvJoinPlugin', () => {
             ],
             ['plain.txt'],
         );
-        fireEvent.click(screen.getByTestId('content-tab-compare'));
-        expect(screen.queryByTestId('content-tab-csvJoin')).toBeNull();
+        fireEvent.click(screen.getByTestId('content-tab-differenceCsv'));
+        expect(screen.queryByTestId('content-tab-compareCsv')).toBeNull();
         expect(screen.queryByTestId('file-csv-join-plugin')).toBeNull();
     });
 
@@ -90,10 +90,10 @@ describe('csvJoinPlugin', () => {
             [],
         );
 
-        // Single selection → the compare tab does not exist, but CSV join
+        // Single selection → the Difference tab does not exist, but Compare CSV
         // accepts one file. The focused file's own tabs render first; the
         // join tab mounts after them.
-        fireEvent.click(screen.getByTestId('content-tab-csvJoin'));
+        fireEvent.click(screen.getByTestId('content-tab-compareCsv'));
 
         // Corner cell + file head; one row per header label, the file's
         // entries as columns: row 'id' → 1, 2; row 'name' → Ann, Bob
@@ -119,7 +119,7 @@ describe('csvJoinPlugin', () => {
             ],
             ['join-b.csv'],
         );
-        fireEvent.click(screen.getByTestId('content-tab-csvJoin'));
+        fireEvent.click(screen.getByTestId('content-tab-compareCsv'));
 
         // Corner cell reads "Header"; file heads in selection order. Each
         // file's entries become columns: row 'id' reads a's 1, 2 then b's
@@ -145,7 +145,7 @@ describe('csvJoinPlugin', () => {
             ],
             ['pre-b.csv'],
         );
-        fireEvent.click(screen.getByTestId('content-tab-csvJoin'));
+        fireEvent.click(screen.getByTestId('content-tab-compareCsv'));
 
         // Before: raw line 1 is the header in file 0 → the label column
         // reads the preamble text
@@ -206,7 +206,7 @@ describe('csvJoinPlugin', () => {
             ],
             ['hovj-b.csv'],
         );
-        fireEvent.click(screen.getByTestId('content-tab-csvJoin'));
+        fireEvent.click(screen.getByTestId('content-tab-compareCsv'));
 
         const table = screen.getByTestId('csv-join-table');
         const spansWithText = (text: string) =>

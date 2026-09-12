@@ -93,9 +93,9 @@ file selected (`renderFile`).
   and a download button (`PdfViewer.tsx`; the `pdfjs.ts` module is the single
   pdf.js access layer — the worker is resolved lazily via a Vite `?url`
   import, with a main-thread fake-worker fallback)
-- `src/plugins/compare/` — git-style file comparison plugin (`diffLines.ts`
-  LCS line diff + `FileDiffView.tsx` side-by-side view; hooks the
-  selection-level `renderSelection` hook)
+- `src/plugins/differenceCsv/` — git-style file difference plugin
+  (`diffLines.ts` LCS line diff + `FileDiffView.tsx` side-by-side view; hooks
+  the selection-level `renderSelection` hook)
 - `src/plugins/yaml/` — YAML / OpenAPI plugin (`detectYamlDocument.ts`
   content-based classification via the `yaml` package + `YamlPlugin.tsx`):
   an OpenAPI 3.x or Swagger 2.0 document (YAML **or** JSON — JSON is a YAML
@@ -117,8 +117,8 @@ switches to **tabs** — one tab per contributing plugin, in sequence order.
 
 When **two or more files** are selected, the dashboard additionally runs
 every plugin hooked into `renderSelection`. Each contributing plugin mounts
-an extra tab AFTER the focused file's plugin tabs — the compare plugin uses
-this to add a **Compare** tab showing a git-style side-by-side diff of the
+an extra tab AFTER the focused file's plugin tabs — the differenceCsv plugin
+uses this to add a **Difference** tab showing a git-style side-by-side diff of the
 FIRST-selected file (left, `−` removed lines) against the SECOND-selected
 file (right, `+` added lines). The tab disappears when the selection drops
 below two files, and no tab is produced when the selection contains a

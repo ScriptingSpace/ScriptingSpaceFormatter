@@ -5,9 +5,9 @@ export * from './exportPdf';
 export * from './sidebar';
 export * from './content';
 export * from './pdfReader';
-export * from './compare';
+export * from './differenceCsv';
 export * from './yaml';
-export * from './csvJoin';
+export * from './compareCsv';
 import { fileReaderPlugin } from './fileReader';
 import { headerPlugin } from './header';
 import { exportPdfPlugin } from './exportPdf';
@@ -17,9 +17,9 @@ import { imagePlugin } from './content/ImagePlugin';
 import { videoPlugin } from './content/VideoPlugin';
 import { pdfReaderPlugin } from './pdfReader';
 import { binaryPlugin } from './content/BinaryPlugin';
-import { comparePlugin } from './compare';
+import { differenceCsvPlugin } from './differenceCsv';
 import { yamlPlugin } from './yaml';
-import { csvJoinPlugin } from './csvJoin';
+import { compareCsvPlugin } from './compareCsv';
 import type { DashboardPlugin } from './core';
 
 // Default plugin sequence — the order IS the execution order:
@@ -33,9 +33,10 @@ import type { DashboardPlugin } from './core';
 //    sequence renders directly — tabs only appear when the yaml plugin ALSO
 //    contributes for the same file (an OpenAPI/Swagger document gets both a
 //    Text tab and its spec tab).
-// 5. renderSelection hooks run last (compare, csvJoin) — their tabs mount
-//    AFTER the focused file's plugin tabs. compare needs two or more files;
-//    csvJoin accepts any selection of all-CSV files (even one).
+// 5. renderSelection hooks run last (differenceCsv, compareCsv) — their tabs
+//    mount AFTER the focused file's plugin tabs, in this order: "Difference"
+//    then "Compare". differenceCsv needs two or more files; compareCsv
+//    accepts any selection of all-CSV files (even one).
 export const defaultPlugins: DashboardPlugin[] = [
     fileReaderPlugin,
     headerPlugin,
@@ -46,7 +47,7 @@ export const defaultPlugins: DashboardPlugin[] = [
     videoPlugin,
     pdfReaderPlugin,
     binaryPlugin,
-    comparePlugin,
+    differenceCsvPlugin,
     yamlPlugin,
-    csvJoinPlugin,
+    compareCsvPlugin,
 ];

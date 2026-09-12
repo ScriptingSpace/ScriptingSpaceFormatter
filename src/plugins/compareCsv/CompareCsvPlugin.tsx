@@ -3,13 +3,13 @@ import { styledComponent } from '@presource/react';
 import type { DashboardPlugin, DashboardSelectionContext } from '../core';
 import { FileCsvJoinView } from './FileCsvJoinView';
 
-// ─── CSV JOIN PLUGIN ─────────────────────────────────────────────────────────
+// ─── COMPARE CSV PLUGIN ──────────────────────────────────────────────────────
 // Multi-file side-by-side CSV viewer. Hooks ONLY `renderSelection` — the
 // selection-level hook that fires when ONE OR MORE sidebar files are
 // selected (cross-reference: dashboards/FormatterDashboard.tsx — selection
-// tabs mount after the focused file's plugin tabs; tab label "CSV join").
+// tabs mount after the focused file's plugin tabs; tab label "Compare").
 //
-// Unlike comparePlugin (exactly two files, order-dependent diff), this
+// Unlike differenceCsvPlugin (exactly two files, order-dependent diff), this
 // viewer accepts ANY selection size — even a single file — as long as every
 // selected file is CSV. Layout (FileCsvJoinView): the FIRST file's selected
 // header row forms the left "Header" column (one table row per header
@@ -18,7 +18,7 @@ import { FileCsvJoinView } from './FileCsvJoinView';
 // input selecting which raw CSV line is that file's header row.
 //
 // Gate: every selected file must be CSV (text kind + .csv extension,
-// case-insensitive — same predicate as comparePlugin's isCsvFile). Any
+// case-insensitive — same predicate as differenceCsvPlugin's isCsvFile). Any
 // non-CSV file in the selection → no tab (the viewer has no meaningful
 // rendering for images / videos / pdfs / generic text).
 
@@ -104,9 +104,9 @@ const JoinLegend = styledComponent('span', {
 
 // ─── Plugin definition ───────────────────────────────────────────────────────
 
-export const csvJoinPlugin: DashboardPlugin = {
-    id: 'csvJoin',
-    label: 'CSV join',
+export const compareCsvPlugin: DashboardPlugin = {
+    id: 'compareCsv',
+    label: 'Compare',
     // Selection-level hook only — fires for ANY selection size (1+ files).
     // All-CSV selections produce the join viewer; anything else contributes
     // no tab.

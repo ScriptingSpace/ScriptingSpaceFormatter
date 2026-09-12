@@ -5,10 +5,10 @@ import { FormatterDashboard } from '../../dashboards/FormatterDashboard';
 import { defaultPlugins } from '../../plugins';
 import { diffLines } from './diffLines';
 
-// ─── COMPARE PLUGIN — integration tests through the real dashboard ──────────
-// The compare plugin hooks `renderSelection`, which the dashboard fires only
-// when TWO OR MORE sidebar files are selected. The tab mounts AFTER the
-// focused file's plugin tabs (tab label "Compare").
+// ─── DIFFERENCE CSV PLUGIN — integration tests through the real dashboard ───
+// The differenceCsv plugin hooks `renderSelection`, which the dashboard fires
+// only when TWO OR MORE sidebar files are selected. The tab mounts AFTER the
+// focused file's plugin tabs (tab label "Difference").
 
 afterEach(() => {
     cleanup();
@@ -32,7 +32,7 @@ const setupTwoSelected = async () => {
     fireEvent.click(screen.getByTestId('sidebar-file-alpha.txt'));
 };
 
-describe('comparePlugin', () => {
+describe('differenceCsvPlugin', () => {
     it('diffLines marks the first file line removed and the second file line added', () => {
         // Pure-function sanity for the exact fixture used by the UI tests
         expect(diffLines('alpha line\nshared line', 'beta line\nshared line')).toEqual([
@@ -42,7 +42,7 @@ describe('comparePlugin', () => {
         ]);
     });
 
-    it('shows no compare tab when only ONE file is selected', async () => {
+    it('shows no Difference tab when only ONE file is selected', async () => {
         render(<FormatterDashboard plugins={defaultPlugins} />);
         fireEvent.drop(screen.getByTestId('dashboard-root'), {
             dataTransfer: {
@@ -53,41 +53,41 @@ describe('comparePlugin', () => {
             expect(screen.getByTestId('file-content-text')).toBeDefined();
         });
 
-        // Single selection → renderSelection never fires → no Compare tab
-        expect(screen.queryByTestId('content-tab-compare')).toBeNull();
-        expect(screen.queryByTestId('file-compare')).toBeNull();
+        // Single selection → renderSelection never fires → no Difference tab
+        expect(screen.queryByTestId('content-tab-differenceCsv')).toBeNull();
+        expect(screen.queryByTestId('file-difference')).toBeNull();
     });
 
-    it('adds a Compare tab after the plugin tabs when exactly 2 files are selected', async () => {
+    it('adds a Difference tab after the plugin tabs when exactly 2 files are selected', async () => {
         await setupTwoSelected();
 
-        // Multi-select → file options layout; the Compare tab exists AFTER
-        // the focused file's plugin tabs (text tab first, compare second)
+        // Multi-select → file options layout; the Difference tab exists AFTER
+        // the focused file's plugin tabs (text tab first, Difference second)
         expect(screen.getByTestId('file-options')).toBeDefined();
         const tabTestIds = Array.from(
             screen.getByTestId('file-option-panel-alpha.txt').querySelector('[data-testid="content-tabs"]')!
                 .children[0].children,
         ).map((tab) => tab.getAttribute('data-testid'));
-        expect(tabTestIds).toEqual(['content-tab-text', 'content-tab-compare']);
-        expect(screen.getByTestId('content-tab-compare').textContent).toBe('Compare');
+        expect(tabTestIds).toEqual(['content-tab-text', 'content-tab-differenceCsv']);
+        expect(screen.getByTestId('content-tab-differenceCsv').textContent).toBe('Difference');
     });
 
-    it('defaults to the focused file tab; clicking Compare shows the git-style diff', async () => {
+    it('defaults to the focused file tab; clicking Difference shows the git-style diff', async () => {
         await setupTwoSelected();
 
         // Default visible tab = the focused file's plugin tab (text)
         expect(screen.getByTestId('file-content-text')).toBeDefined();
-        expect(screen.queryByTestId('file-compare')).toBeNull();
+        expect(screen.queryByTestId('file-difference')).toBeNull();
 
-        // Click the Compare tab → the diff view replaces the text panel
-        fireEvent.click(screen.getByTestId('content-tab-compare'));
+        // Click the Difference tab → the diff view replaces the text panel
+        fireEvent.click(screen.getByTestId('content-tab-differenceCsv'));
 
-        expect(screen.getByTestId('file-compare')).toBeDefined();
+        expect(screen.getByTestId('file-difference')).toBeDefined();
         // Legend maps left column → FIRST-selected file (beta — it was
         // selected by the drop), right → SECOND-selected (alpha — clicked
         // into the selection afterwards)
-        expect(screen.getByTestId('file-compare-first').textContent).toBe('−beta.txt');
-        expect(screen.getByTestId('file-compare-second').textContent).toBe('+alpha.txt');
+        expect(screen.getByTestId('file-difference-first').textContent).toBe('−beta.txt');
+        expect(screen.getByTestId('file-difference-second').textContent).toBe('+alpha.txt');
 
         // The diff grid is the git-style side-by-side: row 1 = removed on
         // the left (beta's unique line), row 2 = added on the right (alpha's
@@ -123,28 +123,28 @@ describe('comparePlugin', () => {
         // so one.txt is the OLD (left) side and two.txt the NEW (right)
         fireEvent.click(screen.getByTestId('sidebar-file-one.txt'));
 
-        fireEvent.click(screen.getByTestId('content-tab-compare'));
+        fireEvent.click(screen.getByTestId('content-tab-differenceCsv'));
 
-        expect(screen.getByTestId('file-compare-first').textContent).toBe('−two.txt');
-        expect(screen.getByTestId('file-compare-second').textContent).toBe('+one.txt');
+        expect(screen.getByTestId('file-difference-first').textContent).toBe('−two.txt');
+        expect(screen.getByTestId('file-difference-second').textContent).toBe('+one.txt');
     });
 
-    it('removes the Compare tab when the selection drops back to one file', async () => {
+    it('removes the Difference tab when the selection drops back to one file', async () => {
         await setupTwoSelected();
-        expect(screen.getByTestId('content-tab-compare')).toBeDefined();
+        expect(screen.getByTestId('content-tab-differenceCsv')).toBeDefined();
 
         // Toggle alpha back off → single selection → the tab disappears and
         // the focused file's text view renders directly
         fireEvent.click(screen.getByTestId('sidebar-file-alpha.txt'));
 
-        expect(screen.queryByTestId('content-tab-compare')).toBeNull();
-        expect(screen.queryByTestId('file-compare')).toBeNull();
+        expect(screen.queryByTestId('content-tab-differenceCsv')).toBeNull();
+        expect(screen.queryByTestId('file-difference')).toBeNull();
         expect(screen.getByTestId('file-content-text').textContent).toBe(
             'beta line\nshared line',
         );
     });
 
-    it('shows no compare tab when the selection contains a non-text file', async () => {
+    it('shows no Difference tab when the selection contains a non-text file', async () => {
         render(<FormatterDashboard plugins={defaultPlugins} />);
         fireEvent.drop(screen.getByTestId('dashboard-root'), {
             dataTransfer: {
@@ -162,7 +162,7 @@ describe('comparePlugin', () => {
         fireEvent.click(screen.getByTestId('sidebar-file-doc.txt'));
 
         expect(screen.getByTestId('file-options')).toBeDefined();
-        expect(screen.queryByTestId('content-tab-compare')).toBeNull();
+        expect(screen.queryByTestId('content-tab-differenceCsv')).toBeNull();
     });
 
     it('renders an empty diff grid when both selected files are empty', async () => {
@@ -180,10 +180,10 @@ describe('comparePlugin', () => {
         });
         fireEvent.click(screen.getByTestId('sidebar-file-empty-a.txt'));
 
-        fireEvent.click(screen.getByTestId('content-tab-compare'));
+        fireEvent.click(screen.getByTestId('content-tab-differenceCsv'));
 
         // Both files are a single empty line → one fully 'same' row
-        expect(screen.getByTestId('file-compare')).toBeDefined();
+        expect(screen.getByTestId('file-difference')).toBeDefined();
         const cells = Array.from(screen.getByTestId('file-diff-grid').children).map(
             (cell) => cell.textContent,
         );
@@ -192,10 +192,10 @@ describe('comparePlugin', () => {
 });
 
 // ─── CSV comparison (two .csv files selected) ────────────────────────────────
-// Two selected CSV files route the Compare tab to the order-independent CSV
+// Two selected CSV files route the Difference tab to the order-independent CSV
 // comparison (csvDiff.ts) instead of the git-style line diff.
 
-describe('comparePlugin — csv comparison', () => {
+describe('differenceCsvPlugin — csv comparison', () => {
     // Drop two CSV files and multi-select both (beta selected by the drop;
     // clicking alpha toggles it INTO the selection)
     const setupTwoCsvSelected = async () => {
@@ -214,7 +214,7 @@ describe('comparePlugin — csv comparison', () => {
         fireEvent.click(screen.getByTestId('sidebar-file-alpha.csv'));
     };
 
-    it('adds a Compare tab for two selected CSV files', async () => {
+    it('adds a Difference tab for two selected CSV files', async () => {
         await setupTwoCsvSelected();
 
         expect(screen.getByTestId('file-options')).toBeDefined();
@@ -222,13 +222,20 @@ describe('comparePlugin — csv comparison', () => {
             screen.getByTestId('file-option-panel-alpha.csv').querySelector('[data-testid="content-tabs"]')!
                 .children[0].children,
         ).map((tab) => tab.getAttribute('data-testid'));
-        expect(tabTestIds).toEqual(['content-tab-text', 'content-tab-compare']);
+        // Two CSV files → BOTH selection plugins contribute: the Difference
+        // tab (this plugin) AND the Compare tab (compareCsv accepts any
+        // all-CSV selection), in defaultPlugins order
+        expect(tabTestIds).toEqual([
+            'content-tab-text',
+            'content-tab-differenceCsv',
+            'content-tab-compareCsv',
+        ]);
     });
 
     it('shows the CSV report (not the line diff) with cell differences and missing rows', async () => {
         await setupTwoCsvSelected();
 
-        fireEvent.click(screen.getByTestId('content-tab-compare'));
+        fireEvent.click(screen.getByTestId('content-tab-differenceCsv'));
 
         // CSV view mounted — the line-diff grid must NOT be present
         expect(screen.getByTestId('file-csv-diff')).toBeDefined();
@@ -275,7 +282,7 @@ describe('comparePlugin — csv comparison', () => {
         });
         fireEvent.click(screen.getByTestId('sidebar-file-first.csv'));
 
-        fireEvent.click(screen.getByTestId('content-tab-compare'));
+        fireEvent.click(screen.getByTestId('content-tab-differenceCsv'));
 
         expect(screen.getByTestId('file-csv-diff')).toBeDefined();
 
@@ -319,7 +326,7 @@ describe('comparePlugin — csv comparison', () => {
         });
         fireEvent.click(screen.getByTestId('sidebar-file-same-a.csv'));
 
-        fireEvent.click(screen.getByTestId('content-tab-compare'));
+        fireEvent.click(screen.getByTestId('content-tab-differenceCsv'));
 
         expect(screen.getByTestId('csv-diff-identical').textContent).toBe(
             'The two CSV files are identical.',
@@ -329,7 +336,7 @@ describe('comparePlugin — csv comparison', () => {
     it('keeps the line diff for two non-CSV text files (regression)', async () => {
         await setupTwoSelected();
 
-        fireEvent.click(screen.getByTestId('content-tab-compare'));
+        fireEvent.click(screen.getByTestId('content-tab-differenceCsv'));
 
         // .txt selection → git-style line diff, not the CSV report
         expect(screen.getByTestId('file-diff-grid')).toBeDefined();
@@ -354,7 +361,7 @@ describe('comparePlugin — csv comparison', () => {
             expect(screen.getByTestId('sidebar-file-pre-b.csv')).toBeDefined();
         });
         fireEvent.click(screen.getByTestId('sidebar-file-pre-a.csv'));
-        fireEvent.click(screen.getByTestId('content-tab-compare'));
+        fireEvent.click(screen.getByTestId('content-tab-differenceCsv'));
 
         // Default header row 1 → headers are the preamble cells → nothing
         // matches cleanly; the report is NOT the identical message
@@ -388,7 +395,7 @@ describe('comparePlugin — csv comparison', () => {
             expect(screen.getByTestId('sidebar-file-norm-b.csv')).toBeDefined();
         });
         fireEvent.click(screen.getByTestId('sidebar-file-norm-a.csv'));
-        fireEvent.click(screen.getByTestId('content-tab-compare'));
+        fireEvent.click(screen.getByTestId('content-tab-differenceCsv'));
 
         // Checkbox renders unchecked by default
         const checkbox = screen.getByTestId('csv-diff-lossless') as HTMLInputElement;
@@ -411,7 +418,7 @@ describe('comparePlugin — csv comparison', () => {
             expect(screen.getByTestId('sidebar-file-norm-b.csv')).toBeDefined();
         });
         fireEvent.click(screen.getByTestId('sidebar-file-norm-a.csv'));
-        fireEvent.click(screen.getByTestId('content-tab-compare'));
+        fireEvent.click(screen.getByTestId('content-tab-differenceCsv'));
 
         // Default (lossless off) → identical
         expect(screen.getByTestId('csv-diff-identical')).toBeDefined();
@@ -466,7 +473,7 @@ describe('comparePlugin — csv comparison', () => {
             expect(screen.getByTestId('sidebar-file-copy-b.csv')).toBeDefined();
         });
         fireEvent.click(screen.getByTestId('sidebar-file-copy-a.csv'));
-        fireEvent.click(screen.getByTestId('content-tab-compare'));
+        fireEvent.click(screen.getByTestId('content-tab-differenceCsv'));
 
         // Copy ICON sits immediately after the section title — clipboard
         // glyph ⎘, no text label
@@ -520,7 +527,7 @@ describe('comparePlugin — csv comparison', () => {
             expect(screen.getByTestId('sidebar-file-esc-b.csv')).toBeDefined();
         });
         fireEvent.click(screen.getByTestId('sidebar-file-esc-a.csv'));
-        fireEvent.click(screen.getByTestId('content-tab-compare'));
+        fireEvent.click(screen.getByTestId('content-tab-differenceCsv'));
 
         fireEvent.click(screen.getByTestId('csv-diff-cells-copy'));
 
@@ -553,7 +560,7 @@ describe('comparePlugin — csv comparison', () => {
             expect(screen.getByTestId('sidebar-file-hov-b.csv')).toBeDefined();
         });
         fireEvent.click(screen.getByTestId('sidebar-file-hov-a.csv'));
-        fireEvent.click(screen.getByTestId('content-tab-compare'));
+        fireEvent.click(screen.getByTestId('content-tab-differenceCsv'));
 
         // Selection order: hov-a.csv opened by the drop, hov-b.csv clicked
         // in after → hov-a.csv = FIRST side, hov-b.csv = SECOND side. The
@@ -625,7 +632,7 @@ describe('comparePlugin — csv comparison', () => {
             expect(screen.getByTestId('sidebar-file-x-b.csv')).toBeDefined();
         });
         fireEvent.click(screen.getByTestId('sidebar-file-x-a.csv'));
-        fireEvent.click(screen.getByTestId('content-tab-compare'));
+        fireEvent.click(screen.getByTestId('content-tab-differenceCsv'));
 
         // Selection order: x-a.csv = FIRST side, x-b.csv = SECOND side.
         // 'X' appears twice in the first-file column (both couples) and

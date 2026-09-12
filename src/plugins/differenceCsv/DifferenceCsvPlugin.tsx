@@ -4,16 +4,16 @@ import type { DashboardPlugin, DashboardSelectionContext } from '../core';
 import { FileDiffView } from './FileDiffView';
 import { FileCsvDiffView } from './FileCsvDiffView';
 
-// ─── COMPARE PLUGIN ──────────────────────────────────────────────────────────
-// File comparison. Hooks ONLY `renderSelection` — the selection-level hook
+// ─── DIFFERENCE CSV PLUGIN ───────────────────────────────────────────────────
+// File difference. Hooks ONLY `renderSelection` — the selection-level hook
 // that fires when TWO OR MORE sidebar files are selected. The dashboard
 // renders the returned node as an extra content tab placed AFTER the focused
-// file's plugin tabs (tab label "Compare"). With fewer than two selected
+// file's plugin tabs (tab label "Difference"). With fewer than two selected
 // files the hook never fires, so the tab simply does not exist.
 //
-// Comparison strategy per selection content:
+// Difference strategy per selection content:
 // - BOTH files are CSV (text kind + .csv extension) → order-independent CSV
-//   comparison (csvDiff.ts: missing columns / missing rows / cell
+//   difference (csvDiff.ts: missing columns / missing rows / cell
 //   differences) rendered by FileCsvDiffView.
 // - OTHERWISE all-text → git-style line diff (diffLines.ts) rendered by
 //   FileDiffView.
@@ -24,7 +24,7 @@ import { FileCsvDiffView } from './FileCsvDiffView';
 const isCsvFile = (file: { name: string; kind: string }): boolean =>
     file.kind === 'text' && file.name.toLowerCase().endsWith('.csv');
 
-// Non-text files have no line/cell model — the comparison only makes sense
+// Non-text files have no line/cell model — the difference only makes sense
 // for text. A selection containing any non-text kind contributes nothing
 // (no tab).
 const isDiffable = (context: DashboardSelectionContext): boolean =>
@@ -34,10 +34,10 @@ const isDiffable = (context: DashboardSelectionContext): boolean =>
 
 // The selection-level renderer. Receives the selection snapshot from the
 // dashboard (dashboards/FormatterDashboard.tsx builds it from the shared
-// store) and compares the FIRST-selected file against the SECOND-selected
+// store) and diffs the FIRST-selected file against the SECOND-selected
 // file — git semantics: first = old side (left), second = new side (right).
-// Two CSV files → CSV comparison view; otherwise the git-style line diff.
-const CompareSelectionView = ({ context }: { context: DashboardSelectionContext }) => {
+// Two CSV files → CSV difference view; otherwise the git-style line diff.
+const DifferenceSelectionView = ({ context }: { context: DashboardSelectionContext }) => {
     // Resolve the selected files in SELECTION order (activeFileIds order —
     // NOT sidebar order): the first-selected file is the diff's "old" side,
     // the second-selected file is the "new" side
@@ -45,31 +45,31 @@ const CompareSelectionView = ({ context }: { context: DashboardSelectionContext 
         .map((name) => context.files.find((entry) => entry.name === name))
         .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
 
-    // Fewer than two resolvable selections → nothing to compare
+    // Fewer than two resolvable selections → nothing to difference
     if (selected.length < 2) return null;
 
     const first = selected[0];
     const second = selected[1];
 
-    // BOTH sides CSV → order-independent CSV comparison (missing columns /
+    // BOTH sides CSV → order-independent CSV difference (missing columns /
     // missing rows / cell differences); any other text pair → line diff
-    const csvComparison = isCsvFile(first) && isCsvFile(second);
+    const csvDifference = isCsvFile(first) && isCsvFile(second);
 
     return (
-        <DiffRoot data-testid="file-compare">
-            <DiffHeader data-testid="file-compare-header">
+        <DiffRoot data-testid="file-difference">
+            <DiffHeader data-testid="file-difference-header">
                 {/* Left (old) side — the FIRST-selected file */}
-                <DiffLegend data-testid="file-compare-first">
+                <DiffLegend data-testid="file-difference-first">
                     <DiffLegendMarker type="removed">−</DiffLegendMarker>
                     {first.name}
                 </DiffLegend>
                 {/* Right (new) side — the SECOND-selected file */}
-                <DiffLegend data-testid="file-compare-second">
+                <DiffLegend data-testid="file-difference-second">
                     <DiffLegendMarker type="added">+</DiffLegendMarker>
                     {second.name}
                 </DiffLegend>
             </DiffHeader>
-            {csvComparison ? (
+            {csvDifference ? (
                 <FileCsvDiffView
                     first={{ name: first.name, content: first.content }}
                     second={{ name: second.name, content: second.content }}
@@ -127,9 +127,9 @@ const DiffLegendMarker = styledComponent<{ type: 'removed' | 'added' }>('span', 
 
 // ─── Plugin definition ───────────────────────────────────────────────────────
 
-export const comparePlugin: DashboardPlugin = {
-    id: 'compare',
-    label: 'Compare',
+export const differenceCsvPlugin: DashboardPlugin = {
+    id: 'differenceCsv',
+    label: 'Difference',
     // Selection-level hook only — the dashboard calls this when two or more
     // files are selected and mounts the returned node as an extra tab after
     // the focused file's plugin tabs
@@ -137,6 +137,15 @@ export const comparePlugin: DashboardPlugin = {
         // Text-only selections produce a real diff; anything else (image /
         // video / pdf / binary in the selection) contributes no tab
         if (!isDiffable(context)) return null;
-        return <CompareSelectionView context={context} />;
+        // The dashboard fires renderSelection for ONE OR MORE selected files
+        // — the difference needs two. Returning the ELEMENT unconditionally
+        // would mount an empty tab (the dashboard only checks for null on
+        // the returned node, and the element itself is always truthy) — so
+        // resolve the selection HERE and return null below two files.
+        const selectedCount = context.activeFileIds.filter((name) =>
+            context.files.some((entry) => entry.name === name),
+        ).length;
+        if (selectedCount < 2) return null;
+        return <DifferenceSelectionView context={context} />;
     },
 };

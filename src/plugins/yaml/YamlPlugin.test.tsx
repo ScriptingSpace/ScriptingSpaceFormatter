@@ -376,7 +376,7 @@ describe('yamlPlugin', () => {
                 .getByTestId('file-option-panel-openapi.yaml')
                 .querySelector('[data-testid="content-tabs"]')!.children[0].children,
         ).map((tab) => tab.getAttribute('data-testid'));
-        expect(tabTestIds).toEqual(['content-tab-text', 'content-tab-yaml', 'content-tab-compare']);
+        expect(tabTestIds).toEqual(['content-tab-text', 'content-tab-yaml', 'content-tab-differenceCsv']);
 
         // Click the YAML tab → the spec view renders inside the panel
         fireEvent.click(screen.getByTestId('content-tab-yaml'));

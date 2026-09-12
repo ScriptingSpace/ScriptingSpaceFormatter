@@ -30,7 +30,7 @@
         "prepublishOnly": "vitest run && tsc --noEmit && tsc -p tsconfig.build.json",
         "preview": "vite preview",
         "start": "node bin/formatter.js",
-        "test": "echo skip",
+        "test": "vitest run",
         "test:watch": "vitest",
         "typecheck": "tsc --noEmit",
         "deploy": "vite build && gh-pages -d dist"
