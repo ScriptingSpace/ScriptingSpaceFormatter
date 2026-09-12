@@ -92,9 +92,39 @@ const FileHead = styledComponent('span', {
     paddingBottom: 2,
 });
 
-// The head incrementer inputs — styled to match the shell's control family
-const RowInput = styledComponent('input', {
-    width: 44,
+// One arrow button of the horizontal stepper — left = decrement, right =
+// increment (the "<" and ">" glyphs of the "< 5 >" control)
+const StepperButton = styledComponent('button', {
+    width: 18,
+    height: 22,
+    padding: 0,
+    fontSize: 11,
+    lineHeight: 1,
+    borderRadius: 4,
+    border: '1px solid #1e293b',
+    background: '#0f172a',
+    color: '#94a3b8',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    display: 'flex',
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+}) as unknown as React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>>;
+
+// The whole horizontal stepper — wraps the three parts tight enough to sit
+// inside a column head (the heads' own gap is wider)
+const StepperGroup = styledComponent('span', {
+    display: 'flex',
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 2,
+});
+
+// The middle of the stepper — a READ-ONLY number display (NOT an input).
+// It just shows the current row number between the < > arrows; every change
+// goes through the arrows. Styled to match the shell's control family.
+const StepperValue = styledComponent('span', {
+    minWidth: 28,
     padding: '2px 4px',
     fontSize: 12,
     fontFamily: 'inherit',
@@ -102,7 +132,55 @@ const RowInput = styledComponent('input', {
     border: '1px solid #1e293b',
     background: '#0f172a',
     color: '#e2e8f0',
-}) as unknown as React.FC<React.InputHTMLAttributes<HTMLInputElement>>;
+    textAlign: 'center' as const,
+    fontVariantNumeric: 'tabular-nums' as const,
+});
+
+// ─── Horizontal row stepper ──────────────────────────────────────────────────
+// Renders `< [number] >`: a decrement button, a READ-ONLY number display
+// (the row index — not editable, changes only via the arrows) and an
+// increment button. `testId` sits on the number display; the arrow buttons
+// get `${testId}-dec` / `${testId}-inc`. Stepping clamps at 1 (rows are
+// 1-based); `value` is parsed so a stale raw text still steps sanely.
+const Stepper = ({
+    value,
+    onChange,
+    title,
+    testId,
+}: {
+    value: string;
+    onChange: (value: string) => void;
+    title: string;
+    testId: string;
+}) => {
+    // Raw text → the numeric base for arrow steps AND the displayed number
+    // (invalid/empty → 1)
+    const parsed = Number.parseInt(value, 10);
+    const current = Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
+    return (
+        <StepperGroup>
+            <StepperButton
+                type="button"
+                title={`Previous row of ${title}`}
+                onClick={() => onChange(String(Math.max(current - 1, 1)))}
+                data-testid={`${testId}-dec`}
+            >
+                {'<'}
+            </StepperButton>
+            <StepperValue title={title} data-testid={testId}>
+                {current}
+            </StepperValue>
+            <StepperButton
+                type="button"
+                title={`Next row of ${title}`}
+                onClick={() => onChange(String(current + 1))}
+                data-testid={`${testId}-inc`}
+            >
+                {'>'}
+            </StepperButton>
+        </StepperGroup>
+    );
+};
 
 // "Header" corner head — tops the label column and carries the SEPARATE
 // header-row incrementer, so EVERY column head has an input (uniform strip)
@@ -217,15 +295,14 @@ export const FileCsvJoinView = ({
                     Header
                     {/* SEPARATE header-row selector — picks which raw line
                         of the FIRST file is the header row (1-based) that
-                        labels the left "Header" column. Styled identical to
-                        the file heads' incrementers so the strip is uniform. */}
-                    <RowInput
-                        type="number"
-                        min={1}
-                        title="Header row of the first file"
+                        labels the left "Header" column. Rendered as the same
+                        horizontal stepper as the file heads so the strip is
+                        uniform. */}
+                    <Stepper
                         value={headerRowInput()}
-                        onChange={(event) => headerRowInput(event.target.value)}
-                        data-testid="csv-join-header-row"
+                        onChange={(value) => headerRowInput(value)}
+                        title="Header row of the first file"
+                        testId="csv-join-header-row"
                     />
                 </CornerHead>
                 {result.files.map((file, fileIndex) => (
@@ -239,19 +316,19 @@ export const FileCsvJoinView = ({
                             displayed as its single entry column (1-based;
                             default = first row after its header row, shown
                             via the clamped entryIndex). A number BEYOND the
-                            file's rows leaves the column BLANK. */}
-                        <RowInput
-                            type="number"
-                            min={1}
-                            title={`Displayed row of ${file.name}`}
+                            file's rows leaves the column BLANK. Horizontal
+                            stepper: < n > (the native number spinner is
+                            vertical, so the arrows are custom). */}
+                        <Stepper
                             value={entryRowInputs()[file.name] ?? String(file.entryIndex + 1)}
-                            onChange={(event) =>
+                            onChange={(value) =>
                                 entryRowInputs({
                                     ...entryRowInputs(),
-                                    [file.name]: event.target.value,
+                                    [file.name]: value,
                                 })
                             }
-                            data-testid={`csv-join-entry-row-${fileIndex}`}
+                            title={`Displayed row of ${file.name}`}
+                            testId={`csv-join-entry-row-${fileIndex}`}
                         />
                     </FileHead>
                 ))}
