@@ -20,6 +20,13 @@
         "vitest.config.ts",
         "vitest.setup.ts",
         "index.ts",
+        // bin/ holds the standalone CLI/app entry (bin/formatter.js,
+        // bin/scaffold.js — plain JS, shipped as-is via package.json "files").
+        // It must NOT be compiled into lib/: with rootDir "src" these files
+        // fall outside rootDir (TS6059) and tsc would try to emit them back
+        // onto themselves (TS5055 "would overwrite input file") — the GitHub
+        // Actions build:lib failure. They are runtime artifacts, not sources.
+        "bin/**/*",
         "**/dist/*",
         "**/lib/*"
     ]
