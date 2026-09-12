@@ -1,0 +1,4 @@
+account_id,account_name,branch,balance_type,amount
+1002,Bob Marley,Downtown,Savings,15500
+1007,Grace Lee,Downtown,Savings,5000
+1008,Henry Ford,Riverside,Checking, 1250.75
