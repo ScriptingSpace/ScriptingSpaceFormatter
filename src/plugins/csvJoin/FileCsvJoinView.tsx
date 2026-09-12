@@ -1,26 +1,31 @@
 import React from 'react';
 import { styledComponent, useStateHook } from '@presource/react';
 import { csvJoin } from './csvJoin';
-import type { CsvJoinResult } from './csvJoin';
+import type { CsvJoinFile, CsvJoinResult } from './csvJoin';
 
 // ─── Multi-file CSV join view ────────────────────────────────────────────────
-// Renders the csvJoin result (csvJoin.ts) as a side-by-side table:
+// Renders the csvJoin result (csvJoin.ts) as a TRANSPOSED side-by-side table:
 //
-//   ┌──────────┬───────────┬───────────┐
-//   │ HEADER   │ file-a    │ file-b    │   ← column header strip: the left
-//   │ id       │ 1         │ 1         │     cell reads "Header", the value
-//   │ name     │ Ann       │ Anna      │     columns carry the file names
-//   │ age      │ 20        │ 21        │
-//   └──────────┴───────────┴───────────┘
+//   ┌──────────┬──────────────┬──────────────┬──────────────┐
+//   │ Header   │ a.csv  [1] ▦ │ a.csv  [1] ▦ │ b.csv  [1] ▦ │   ← file head
+//   │          │ entry1 entry2│ entry3 entry4│ entry1 entry2│     spans its
+//   │ id       │ 1      2     │ ...          │ ...          │     entry cols
+//   │ name     │ Ann    Bob   │              │              │
+//   └──────────┴──────────────┴──────────────┴──────────────┘
 //
-// - LEFT column: the FIRST file's headers ONLY (later files' headers are
-//   ignored by design — cross-reference: csvJoin.ts). One table row per
-//   header label; each file's column shows that file's values in row order.
-// - The header-row selector (one number input, default 1) chooses WHICH raw
-//   CSV line is the header row — SHARED across all files. Changing it
-//   recomputes the whole join.
+// - FIRST column ("Header"): the FIRST file's selected header row, one
+//   table row per header cell — "the first column is the header selected of
+//   the first file". Later files' header rows are NOT rendered (cross-
+//   reference: csvJoin.ts).
+// - Each file's DATA ENTRIES (rows after that file's header row) become
+//   COLUMNS, grouped under the file's head cell left to right; entry cells
+//   align with the header labels by index. Row count = the longest entry
+//   (labels run blank past the first file's header list).
+// - EACH file's head cell carries its own number input (one per file, NOT
+//   shared) selecting which raw CSV line is that file's header row; the
+//   first file's selector therefore also drives the "Header" column.
 // - Hover cross-highlighting: hovering a value cell tints it gray AND every
-//   OTHER cell in the same table row (any file column) that holds the SAME
+//   OTHER cell in the same table row (any entry column) that holds the SAME
 //   value blue. State: hoveredCellId (exact cell identity) + hoveredValue
 //   (raw text) — value alone cannot distinguish the hovered cell from its
 //   same-value twins (same pattern as FileCsvDiffView's hover state).
@@ -49,29 +54,40 @@ const CsvFrame = styledComponent('div', {
     gap: 16,
 });
 
-// Header-row selector strip — labeled number input (shared across files)
-const HeaderRowBar = styledComponent('div', {
-    display: 'flex',
-    flexDirection: 'row' as const,
-    gap: 16,
-    alignItems: 'center' as const,
-    flexShrink: 0,
+// Grid for the transposed table. Layout: header-label column | one grid
+// column per ENTRY (files' entries grouped left to right in selection
+// order). The label column hugs its content; entry columns share the rest.
+const JoinTable = styledComponent<{ entryColumns: number }>('div', {
+    display: 'grid' as const,
+    gridTemplateColumns: ({ entryColumns }) =>
+        `minmax(90px, max-content) repeat(${entryColumns}, minmax(0, 1fr))`,
+    width: 'max-content' as const,
+    minWidth: '100%',
+    gap: '2px 12px',
 });
 
-// One selector: label + number input
-const HeaderRowControl = styledComponent('label', {
+// File head cell — sits in the strip row ABOVE the file's entry columns and
+// spans exactly those columns (`entryCount`, minimum 1 so a file with no
+// data rows still keeps its selector aligned over a blank column). Holds
+// the file name + the PER-FILE header-row input.
+const FileHead = styledComponent<{ entryCount: number }>('span', {
+    gridColumn: ({ entryCount }) => `span ${Math.max(entryCount, 1)}`,
     display: 'flex',
     flexDirection: 'row' as const,
-    gap: 6,
     alignItems: 'center' as const,
-    fontSize: 12,
-    color: '#94a3b8',
+    gap: 8,
+    fontWeight: 700,
+    color: '#64748b',
+    whiteSpace: 'nowrap' as const,
+    borderBottom: '1px solid #1e293b',
+    paddingBottom: 2,
 });
 
-// The number input itself — styled to match the shell's control family
+// The per-file header-row number input — styled to match the shell's
+// control family
 const HeaderRowInput = styledComponent('input', {
-    width: 56,
-    padding: '4px 6px',
+    width: 48,
+    padding: '2px 4px',
     fontSize: 12,
     fontFamily: 'inherit',
     borderRadius: 6,
@@ -80,31 +96,11 @@ const HeaderRowInput = styledComponent('input', {
     color: '#e2e8f0',
 }) as unknown as React.FC<React.InputHTMLAttributes<HTMLInputElement>>;
 
-// Grid for the joined table. Layout: header label | one column per file.
-// The left column hugs its content; the file columns share the rest evenly.
-const JoinTable = styledComponent<{ fileCount: number }>('div', {
-    display: 'grid' as const,
-    gridTemplateColumns: ({ fileCount }) =>
-        `minmax(90px, max-content) repeat(${fileCount}, minmax(0, 1fr))`,
-    width: 'max-content' as const,
-    minWidth: '100%',
-    gap: '2px 12px',
-});
-
 // Left-column header-label cell — visually distinct (muted bold) so the
 // header labels read as row titles rather than data
 const HeaderLabel = styledComponent('span', {
     fontWeight: 700,
     color: '#94a3b8',
-    whiteSpace: 'nowrap' as const,
-    borderBottom: '1px solid #1e293b',
-    paddingBottom: 2,
-});
-
-// File-name cell atop each value column
-const FileHead = styledComponent('span', {
-    fontWeight: 700,
-    color: '#64748b',
     whiteSpace: 'nowrap' as const,
     borderBottom: '1px solid #1e293b',
     paddingBottom: 2,
@@ -129,114 +125,138 @@ const valueCellHighlightStyle = (hovered?: boolean, matched?: boolean): React.CS
 
 // ─── Component ───────────────────────────────────────────────────────────────
 // Recomputes the join on every render — pure and deterministic for a given
-// (files, header row) input tuple.
+// (files, per-file header rows) input tuple.
 export const FileCsvJoinView = ({
     files,
 }: {
     files: { name: string; content: string }[];
 }) => {
-    // Header row position (1-based raw CSV line number, default 1) — SHARED
-    // across every file. The input keeps its raw text so clearing it does
-    // not snap mid-edit; the committed value feeds the join (invalid/empty
-    // → 1). useStateHook is an accessor function (read with no args, write
-    // with one), NOT an array-destructuring hook like React's useState.
-    const headerRowInput = useStateHook('1');
+    // PER-FILE header row positions (1-based raw CSV line number, default
+    // 1), keyed by file name so selection changes (files added/removed)
+    // never desync the state array. The input keeps its raw text so clearing
+    // it does not snap mid-edit; the committed value feeds the join
+    // (invalid/empty → 1). useStateHook is an accessor function (read with
+    // no args, write with one), NOT an array-destructuring hook like React's
+    // useState.
+    const headerRowInputs = useStateHook<Record<string, string>>({});
     // Hover cross-highlighting — TWO pieces of state:
-    // - hoveredCellId: identity of the exact hovered cell (`r<row>-f<file>`,
-    //   null = nothing hovered). Identity is needed because a same-value
-    //   cell must get the MATCHED tint, not the hovered tint — value alone
-    //   cannot distinguish the hovered cell from its twins.
+    // - hoveredCellId: identity of the exact hovered cell
+    //   (`r<row>-f<file>-c<column>`, null = nothing hovered). Identity is
+    //   needed because a same-value cell must get the MATCHED tint, not the
+    //   hovered tint — value alone cannot distinguish the hovered cell from
+    //   its twins.
     // - hoveredValue: the hovered cell's RAW text, used to find same-value
-    //   cells anywhere else in the same table row (any file column).
+    //   cells anywhere else in the same table row (any entry column).
     const hoveredCellId = useStateHook<string | null>(null);
     const hoveredValue = useStateHook<string | null>(null);
 
-    const resolveHeaderRow = (raw: string): number => {
-        const parsed = Number.parseInt(raw, 10);
+    // Raw input text → 1-based header row number (invalid/empty → 1)
+    const resolveHeaderRow = (raw: string | undefined): number => {
+        const parsed = Number.parseInt(raw ?? '', 10);
         return Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
     };
 
     const result: CsvJoinResult = csvJoin(files, {
-        headerRow: resolveHeaderRow(headerRowInput()),
+        // One selector per file, in selection order — file 0's selector
+        // drives the "Header" column as well as its own data start
+        headerRows: files.map((file) => resolveHeaderRow(headerRowInputs()[file.name])),
     });
 
-    // Row count = the LONGEST file column (files may have different data
-    // row counts; shorter columns render blank cells for the missing tail)
+    // A file with no entry columns still occupies ONE grid column (blank)
+    // so CSS grid auto-placement keeps every later file's cells aligned
+    // under its own head — every row must emit the same cell count.
+    const fileColumnCount = (file: CsvJoinFile): number => Math.max(file.columns.length, 1);
+
+    // Total grid columns = label column + every file's entry columns
+    const entryColumns = result.files.reduce((sum, file) => sum + fileColumnCount(file), 0);
+
+    // Row count = the LONGEST entry (files may have different column counts
+    // AND entries with different cell counts; shorter cells render blank)
     const rowCount = result.files.reduce(
-        (max, file) => Math.max(max, file.columns.length),
+        (max, file) =>
+            file.columns.reduce((fileMax, entry) => Math.max(fileMax, entry.length), max),
         0,
     );
 
     return (
         <CsvFrame data-testid="file-csv-join">
-            {/* Header-row selector — which raw CSV line is the column header
-                in EVERY file (1-based; rows before it are ignored). Changing
-                it recomputes the whole join. */}
-            <HeaderRowBar data-testid="csv-join-header-row-bar">
-                <HeaderRowControl>
-                    Header row
-                    <HeaderRowInput
-                        type="number"
-                        min={1}
-                        value={headerRowInput()}
-                        onChange={(event) => headerRowInput(event.target.value)}
-                        data-testid="csv-join-header-row"
-                    />
-                </HeaderRowControl>
-            </HeaderRowBar>
-
-            {/* Joined table — left column: first file's headers; one value
-                column per file (file-name header strip on top). Row count =
-                longest file column. */}
-            <JoinTable fileCount={result.files.length} data-testid="csv-join-table">
-                {/* Corner cell + file-name header strip */}
+            {/* Transposed table — first column: first file's header labels;
+                then, per file, its data entries as columns grouped under the
+                file's head (name + per-file header-row input). Row count =
+                longest entry across all files. */}
+            <JoinTable entryColumns={entryColumns} data-testid="csv-join-table">
+                {/* Corner cell + per-file head strip (each head spans its
+                    file's entry columns) */}
                 <HeaderLabel>Header</HeaderLabel>
                 {result.files.map((file, fileIndex) => (
-                    <FileHead key={`head-${fileIndex}`}>{file.name}</FileHead>
+                    <FileHead
+                        key={`head-${file.name}-${fileIndex}`}
+                        entryCount={file.columns.length}
+                        data-testid={`csv-join-file-head-${fileIndex}`}
+                    >
+                        {file.name}
+                        {/* PER-FILE header-row selector — which raw CSV line
+                            is THIS file's header row (1-based; rows before
+                            it are ignored as preamble, rows after it become
+                            its entry columns). File 0's selector also drives
+                            the "Header" label column. */}
+                        <HeaderRowInput
+                            type="number"
+                            min={1}
+                            value={headerRowInputs()[file.name] ?? '1'}
+                            onChange={(event) =>
+                                headerRowInputs({
+                                    ...headerRowInputs(),
+                                    [file.name]: event.target.value,
+                                })
+                            }
+                            data-testid={`csv-join-header-row-${fileIndex}`}
+                        />
+                    </FileHead>
                 ))}
 
-                {/* One table row per header label of the FIRST file, then
-                    tail rows for files longer than the first file's header
-                    list. Each value cell reads the file's data row at this
-                    table row — column 0 of the parsed row when the row fits
-                    the header layout; for rows beyond the header list the
-                    cell shows the row's first cell (a multi-column tail row
-                    cannot be aligned without a header to align against). */}
+                {/* One table row per header-label position: the left cell is
+                    the first file's header label (blank past its header
+                    list); then every file's entry columns show the cell at
+                    this label index — entry[k][j] aligns under label j. */}
                 {Array.from({ length: rowCount }, (_, rowIndex) => (
                     <React.Fragment key={`row-${rowIndex}`}>
-                        {/* Left label: the header label while the header list
-                            lasts, blank after it runs out */}
                         <HeaderLabel data-testid="csv-join-header-label">
                             {result.headers[rowIndex] ?? '\u00a0'}
                         </HeaderLabel>
-                        {result.files.map((file, fileIndex) => {
-                            // Missing trailing cells (short rows / shorter
-                            // files) read as '' — no padding in csvJoin
-                            const raw = file.columns[rowIndex]?.[0] ?? '';
-                            const cellId = `r${rowIndex}-f${fileIndex}`;
-                            return (
-                                <ValueCell
-                                    key={`cell-${rowIndex}-${fileIndex}`}
-                                    data-testid="csv-join-cell"
-                                    style={valueCellHighlightStyle(
-                                        hoveredCellId() === cellId,
-                                        hoveredCellId() !== null &&
-                                            hoveredValue() === raw &&
-                                            hoveredCellId() !== cellId,
-                                    )}
-                                    onMouseEnter={() => {
-                                        hoveredCellId(cellId);
-                                        hoveredValue(raw);
-                                    }}
-                                    onMouseLeave={() => {
-                                        hoveredCellId(null);
-                                        hoveredValue(null);
-                                    }}
-                                >
-                                    {raw === '' ? '\u00a0' : raw}
-                                </ValueCell>
-                            );
-                        })}
+                        {result.files.map((file, fileIndex) =>
+                            // Fixed cell count per file (min 1) keeps grid
+                            // auto-placement aligned; entries shorter than
+                            // the table / missing columns read as ''
+                            Array.from({ length: fileColumnCount(file) }, (_, columnIndex) => {
+                                // Missing trailing cells read as '' — no
+                                // padding in csvJoin
+                                const raw = file.columns[columnIndex]?.[rowIndex] ?? '';
+                                const cellId = `r${rowIndex}-f${fileIndex}-c${columnIndex}`;
+                                return (
+                                    <ValueCell
+                                        key={`cell-${rowIndex}-${fileIndex}-${columnIndex}`}
+                                        data-testid="csv-join-cell"
+                                        style={valueCellHighlightStyle(
+                                            hoveredCellId() === cellId,
+                                            hoveredCellId() !== null &&
+                                                hoveredValue() === raw &&
+                                                hoveredCellId() !== cellId,
+                                        )}
+                                        onMouseEnter={() => {
+                                            hoveredCellId(cellId);
+                                            hoveredValue(raw);
+                                        }}
+                                        onMouseLeave={() => {
+                                            hoveredCellId(null);
+                                            hoveredValue(null);
+                                        }}
+                                    >
+                                        {raw === '' ? '\u00a0' : raw}
+                                    </ValueCell>
+                                );
+                            }),
+                        )}
                     </React.Fragment>
                 ))}
             </JoinTable>

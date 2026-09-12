@@ -7,9 +7,10 @@ import { csvJoin } from './csvJoin';
 // pins the EXACT output object — no ranges, no fuzzy checks.
 
 describe('csvJoin', () => {
-    it('joins two files positionally with the FIRST file headers only', () => {
-        // Second file has DIFFERENT header names — they must be ignored;
-        // only the first file's header row labels the left column
+    it('joins files TRANSPOSED: first file headers label the rows, entries become columns', () => {
+        // Second file has DIFFERENT header names — they are kept per-file
+        // (only the first file's header row labels the table); each file's
+        // data rows become entry COLUMNS in file order
         const result = csvJoin([
             { name: 'a.csv', content: 'id,name\n1,Ann\n2,Bob' },
             { name: 'b.csv', content: 'key,label\n1,Anna\n2,Robert' },
@@ -17,8 +18,16 @@ describe('csvJoin', () => {
         expect(result).toEqual({
             headers: ['id', 'name'],
             files: [
-                { name: 'a.csv', columns: [['1', 'Ann'], ['2', 'Bob']] },
-                { name: 'b.csv', columns: [['1', 'Anna'], ['2', 'Robert']] },
+                {
+                    name: 'a.csv',
+                    headers: ['id', 'name'],
+                    columns: [['1', 'Ann'], ['2', 'Bob']],
+                },
+                {
+                    name: 'b.csv',
+                    headers: ['key', 'label'],
+                    columns: [['1', 'Anna'], ['2', 'Robert']],
+                },
             ],
         });
     });
@@ -27,7 +36,9 @@ describe('csvJoin', () => {
         const result = csvJoin([{ name: 'solo.csv', content: 'id,name\n1,Ann' }]);
         expect(result).toEqual({
             headers: ['id', 'name'],
-            files: [{ name: 'solo.csv', columns: [['1', 'Ann']] }],
+            files: [
+                { name: 'solo.csv', headers: ['id', 'name'], columns: [['1', 'Ann']] },
+            ],
         });
     });
 
@@ -35,21 +46,39 @@ describe('csvJoin', () => {
         expect(csvJoin([])).toEqual({ headers: [], files: [] });
     });
 
-    it('respects a shared headerRow offset across all files', () => {
-        // Both files carry a one-line preamble; headerRow: 2 skips it in
-        // BOTH files (one shared selector, not per-file)
+    it('headerRows are PER FILE — each index selects that file header line', () => {
+        // a.csv header at line 2, b.csv header at line 3 — independent
+        // selectors (NOT one shared value like before)
         const result = csvJoin(
             [
                 { name: 'a.csv', content: 'preamble\nid,name\n1,Ann' },
-                { name: 'b.csv', content: 'preamble\nkey,label\n1,Anna' },
+                { name: 'b.csv', content: 'preamble\njunk\nkey,label\n1,Anna' },
             ],
-            { headerRow: 2 },
+            { headerRows: [2, 3] },
         );
         expect(result).toEqual({
             headers: ['id', 'name'],
             files: [
-                { name: 'a.csv', columns: [['1', 'Ann']] },
-                { name: 'b.csv', columns: [['1', 'Anna']] },
+                { name: 'a.csv', headers: ['id', 'name'], columns: [['1', 'Ann']] },
+                { name: 'b.csv', headers: ['key', 'label'], columns: [['1', 'Anna']] },
+            ],
+        });
+    });
+
+    it('undefined entries in headerRows fall back to line 1 for that file', () => {
+        const result = csvJoin(
+            [
+                { name: 'a.csv', content: 'preamble\nid,name\n1,Ann' },
+                { name: 'b.csv', content: 'key,label\n1,Anna' },
+            ],
+            { headerRows: [2, undefined] },
+        );
+        expect(result).toEqual({
+            headers: ['id', 'name'],
+            files: [
+                { name: 'a.csv', headers: ['id', 'name'], columns: [['1', 'Ann']] },
+                // b.csv falls back to its first line as the header row
+                { name: 'b.csv', headers: ['key', 'label'], columns: [['1', 'Anna']] },
             ],
         });
     });
@@ -62,24 +91,24 @@ describe('csvJoin', () => {
                 { name: 'a.csv', content: 'id,name\n1,Ann\n2,Bob' },
                 { name: 'b.csv', content: 'key,label\n1,Anna' },
             ],
-            { headerRow: 5 },
+            { headerRows: [5, 5] },
         );
         expect(result).toEqual({
             headers: ['2', 'Bob'],
             files: [
-                { name: 'a.csv', columns: [] },
-                { name: 'b.csv', columns: [] },
+                { name: 'a.csv', headers: ['2', 'Bob'], columns: [] },
+                { name: 'b.csv', headers: ['1', 'Anna'], columns: [] },
             ],
         });
     });
 
     it('rows before the header row are ignored as preamble', () => {
         const result = csvJoin([{ name: 'a.csv', content: 'junk\nmore junk\nid,name\n1,Ann' }], {
-            headerRow: 3,
+            headerRows: [3],
         });
         expect(result).toEqual({
             headers: ['id', 'name'],
-            files: [{ name: 'a.csv', columns: [['1', 'Ann']] }],
+            files: [{ name: 'a.csv', headers: ['id', 'name'], columns: [['1', 'Ann']] }],
         });
     });
 
@@ -94,6 +123,7 @@ describe('csvJoin', () => {
             files: [
                 {
                     name: 'a.csv',
+                    headers: ['id', 'note'],
                     columns: [['1', 'has, comma'], ['2', 'line1\nline2']],
                 },
             ],
@@ -104,13 +134,15 @@ describe('csvJoin', () => {
         const result = csvJoin([{ name: 'a.csv', content: 'id,name\r\n1,Ann\r\n2,Bob' }]);
         expect(result).toEqual({
             headers: ['id', 'name'],
-            files: [{ name: 'a.csv', columns: [['1', 'Ann'], ['2', 'Bob']] }],
+            files: [
+                { name: 'a.csv', headers: ['id', 'name'], columns: [['1', 'Ann'], ['2', 'Bob']] },
+            ],
         });
     });
 
     it('files with different row counts keep their own column lengths', () => {
-        // No padding is added — each file column carries exactly its own
-        // data rows; the viewer renders blanks for the shorter columns
+        // No padding is added — each file carries exactly its own entries;
+        // the viewer renders blanks for the shorter columns
         const result = csvJoin([
             { name: 'a.csv', content: 'id\n1\n2\n3' },
             { name: 'b.csv', content: 'id\n1' },
@@ -118,8 +150,8 @@ describe('csvJoin', () => {
         expect(result).toEqual({
             headers: ['id'],
             files: [
-                { name: 'a.csv', columns: [['1'], ['2'], ['3']] },
-                { name: 'b.csv', columns: [['1']] },
+                { name: 'a.csv', headers: ['id'], columns: [['1'], ['2'], ['3']] },
+                { name: 'b.csv', headers: ['id'], columns: [['1']] },
             ],
         });
     });
@@ -130,22 +162,22 @@ describe('csvJoin', () => {
         const result = csvJoin([{ name: 'a.csv', content: 'id,name\n1\n2,Bob' }]);
         expect(result).toEqual({
             headers: ['id', 'name'],
-            files: [{ name: 'a.csv', columns: [['1'], ['2', 'Bob']] }],
+            files: [{ name: 'a.csv', headers: ['id', 'name'], columns: [['1'], ['2', 'Bob']] }],
         });
     });
 
     it('invalid headerRow falls back to 1', () => {
-        const result = csvJoin([{ name: 'a.csv', content: 'id\n1' }], { headerRow: 0 });
+        const result = csvJoin([{ name: 'a.csv', content: 'id\n1' }], { headerRows: [0] });
         expect(result).toEqual({
             headers: ['id'],
-            files: [{ name: 'a.csv', columns: [['1']] }],
+            files: [{ name: 'a.csv', headers: ['id'], columns: [['1']] }],
         });
     });
 
     it('empty content yields empty headers and an empty column', () => {
         expect(csvJoin([{ name: 'a.csv', content: '' }])).toEqual({
             headers: [],
-            files: [{ name: 'a.csv', columns: [] }],
+            files: [{ name: 'a.csv', headers: [], columns: [] }],
         });
     });
 });

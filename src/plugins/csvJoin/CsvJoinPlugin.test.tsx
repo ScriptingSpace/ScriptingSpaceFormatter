@@ -13,14 +13,23 @@ import { csvJoin } from './csvJoin';
 // Selection order semantics (cross-reference: ComparePlugin.test.tsx): the
 // file dropped first is selected by the drop; clicking another sidebar file
 // TOGGLES it into the selection. activeFileIds order = selection order —
-// the FIRST-selected file donates the header column.
+// the FIRST-selected file's selected header row donates the "Header" column.
+//
+// Layout (FileCsvJoinView): the table is TRANSPOSED — first column = header
+// labels of the first file; each file's data ENTRIES become columns grouped
+// under that file's head, left to right. Each file head carries its own
+// header-row number input (testid csv-join-header-row-<fileIndex>).
 
 afterEach(() => {
     cleanup();
 });
 
-// Drop CSV files and select them (drop selects the last dropped file;
-// clicking a sidebar entry toggles it into the multi-selection)
+// Drop CSV files and select them. The drop opens EVERY file but activates
+// only the LAST one (openFile replaces the selection — cross-reference:
+// plugins/fileReader/FileReaderPlugin.ts onFilesDropped); clicking a sidebar
+// entry that is NOT selected toggles it INTO the multi-selection. So
+// activeFileIds = [last dropped, ...clickNames] — click the OTHER files to
+// control the selection order.
 const dropAndSelect = async (files: File[], clickNames: string[]) => {
     render(<FormatterDashboard plugins={defaultPlugins} />);
     fireEvent.drop(screen.getByTestId('dashboard-root'), { dataTransfer: { files } });
@@ -33,7 +42,7 @@ const dropAndSelect = async (files: File[], clickNames: string[]) => {
 };
 
 describe('csvJoin — pure function', () => {
-    it('joins two files positionally with the FIRST file headers only', () => {
+    it('joins two files TRANSPOSED with the FIRST file headers labeling the rows', () => {
         expect(
             csvJoin([
                 { name: 'a.csv', content: 'id,name\n1,Ann\n2,Bob' },
@@ -42,8 +51,12 @@ describe('csvJoin — pure function', () => {
         ).toEqual({
             headers: ['id', 'name'],
             files: [
-                { name: 'a.csv', columns: [['1', 'Ann'], ['2', 'Bob']] },
-                { name: 'b.csv', columns: [['1', 'Anna'], ['2', 'Robert']] },
+                { name: 'a.csv', headers: ['id', 'name'], columns: [['1', 'Ann'], ['2', 'Bob']] },
+                {
+                    name: 'b.csv',
+                    headers: ['key', 'label'],
+                    columns: [['1', 'Anna'], ['2', 'Robert']],
+                },
             ],
         });
     });
@@ -51,7 +64,7 @@ describe('csvJoin — pure function', () => {
     it('accepts a single file', () => {
         expect(csvJoin([{ name: 'solo.csv', content: 'id,name\n1,Ann' }])).toEqual({
             headers: ['id', 'name'],
-            files: [{ name: 'solo.csv', columns: [['1', 'Ann']] }],
+            files: [{ name: 'solo.csv', headers: ['id', 'name'], columns: [['1', 'Ann']] }],
         });
     });
 });
@@ -71,7 +84,7 @@ describe('csvJoinPlugin', () => {
         expect(screen.queryByTestId('file-csv-join-plugin')).toBeNull();
     });
 
-    it('joins a SINGLE csv file (header column + one value column)', async () => {
+    it('joins a SINGLE csv file (header column + one entry column per data row)', async () => {
         await dropAndSelect(
             [new File(['id,name\n1,Ann\n2,Bob'], 'solo.csv', { type: 'text/csv' })],
             [],
@@ -82,62 +95,89 @@ describe('csvJoinPlugin', () => {
         // join tab mounts after them.
         fireEvent.click(screen.getByTestId('content-tab-csvJoin'));
 
-        // Corner cell + file-name strip; one row per header label
+        // Corner cell + file head; one row per header label, the file's
+        // entries as columns: row 'id' → 1, 2; row 'name' → Ann, Bob
         expect(screen.getByTestId('csv-join-table').textContent).toBe(
-            'Headersolo.csvidname1Ann2Bob',
+            'Headersolo.csvid12nameAnnBob',
         );
         // Left column carries the FIRST (only) file's headers
         const labels = screen.getAllByTestId('csv-join-header-label');
         expect(labels.map((label) => label.textContent)).toEqual(['id', 'name']);
-        // One value cell per header row per file column
+        // One value cell per table row per entry column (row-major)
         const cells = screen.getAllByTestId('csv-join-cell');
-        expect(cells.map((cell) => cell.textContent)).toEqual(['1', 'Ann', '2', 'Bob']);
+        expect(cells.map((cell) => cell.textContent)).toEqual(['1', '2', 'Ann', 'Bob']);
     });
 
     it('joins two csv files with the first-selected file headers on the left', async () => {
-        // Selection order: a.csv (dropped, auto-selected) then b.csv
-        // (clicked in) → a.csv = FIRST side (header donor), b.csv = second
+        // Selection order: drop [b, a] → a.csv is opened LAST so the drop
+        // auto-selects IT; clicking join-b.csv toggles b INTO the selection
+        // → activeFileIds = [a, b]: a.csv = FIRST side (header donor)
         await dropAndSelect(
             [
-                new File(['id,name\n1,Ann\n2,Bob'], 'join-a.csv', { type: 'text/csv' }),
                 new File(['key,label\n1,Anna\n2,Robert\n3,Zed'], 'join-b.csv', { type: 'text/csv' }),
+                new File(['id,name\n1,Ann\n2,Bob'], 'join-a.csv', { type: 'text/csv' }),
             ],
             ['join-b.csv'],
         );
         fireEvent.click(screen.getByTestId('content-tab-csvJoin'));
 
-        // Corner cell reads "Header"; file-name strip in selection order.
-        // b.csv has THREE data rows vs a.csv's two → the tail row renders
-        // with a blank label and b.csv's '3' value; a.csv's tail cell is
-        // blank (nbsp).
+        // Corner cell reads "Header"; file heads in selection order. Each
+        // file's entries become columns: row 'id' reads a's 1, 2 then b's
+        // 1, 2, 3; row 'name' reads Ann, Bob, Anna, Robert, Zed.
         expect(screen.getByTestId('csv-join-table').textContent).toBe(
-            'Headerjoin-a.csvjoin-b.csvidname1AnnAnna2BobRobert\u00a03Zed',
+            'Headerjoin-a.csvjoin-b.csvid12123nameAnnBobAnnaRobertZed',
         );
         // Left column = FIRST file's headers ONLY — b.csv's key/label
-        // headers are ignored by design
+        // headers are not rendered
         const labels = screen.getAllByTestId('csv-join-header-label');
-        expect(labels.map((label) => label.textContent)).toEqual(['id', 'name', '\u00a0']);
+        expect(labels.map((label) => label.textContent)).toEqual(['id', 'name']);
     });
 
-    it('header-row selector shifts the header line in EVERY file', async () => {
-        // Both files carry a one-line preamble; headerRow 2 skips it in both
+    it('each file has its OWN header-row input selecting that file header line', async () => {
+        // Both files carry a one-line preamble, but the selectors are
+        // independent: changing file 0's input must NOT touch file 1.
+        // Drop [b, a] → the drop auto-selects pre-a.csv; clicking pre-b.csv
+        // toggles it in → activeFileIds = [pre-a, pre-b]
         await dropAndSelect(
             [
-                new File(['preamble\nid,name\n1,Ann'], 'pre-a.csv', { type: 'text/csv' }),
                 new File(['preamble\nkey,label\n1,Anna'], 'pre-b.csv', { type: 'text/csv' }),
+                new File(['preamble\nid,name\n1,Ann'], 'pre-a.csv', { type: 'text/csv' }),
             ],
             ['pre-b.csv'],
         );
         fireEvent.click(screen.getByTestId('content-tab-csvJoin'));
 
-        // Before: raw line 1 is the header → labels are the preamble text
+        // Before: raw line 1 is the header in file 0 → the label column
+        // reads the preamble text
         expect(screen.getAllByTestId('csv-join-header-label').map((l) => l.textContent)).toEqual([
             'preamble',
-            'preamble',
+            '\u00a0',
         ]);
 
-        // Change the shared selector → both files re-resolve
-        fireEvent.change(screen.getByTestId('csv-join-header-row'), {
+        // Change file 0's selector → file 0's header row moves to line 2;
+        // file 1's data start stays on its preamble row (header line 1)
+        fireEvent.change(screen.getByTestId('csv-join-header-row-0'), {
+            target: { value: '2' },
+        });
+        expect(screen.getAllByTestId('csv-join-header-label').map((l) => l.textContent)).toEqual([
+            'id',
+            'name',
+        ]);
+        // Row-major cells: row 'id' → a '1', b 'key', '1'; row 'name' →
+        // a 'Ann', b 'label', 'Anna' (b's entries still start after ITS
+        // line-1 header)
+        expect(screen.getAllByTestId('csv-join-cell').map((c) => c.textContent)).toEqual([
+            '1',
+            'key',
+            '1',
+            'Ann',
+            'label',
+            'Anna',
+        ]);
+
+        // Change file 1's selector → only b's entries shift; the Header
+        // column (file 0) stays untouched
+        fireEvent.change(screen.getByTestId('csv-join-header-row-1'), {
             target: { value: '2' },
         });
         expect(screen.getAllByTestId('csv-join-header-label').map((l) => l.textContent)).toEqual([
@@ -146,34 +186,35 @@ describe('csvJoinPlugin', () => {
         ]);
         expect(screen.getAllByTestId('csv-join-cell').map((c) => c.textContent)).toEqual([
             '1',
+            '1',
+            'Ann',
             'Anna',
         ]);
     });
 
     it('cross-highlights same-value cells in a row on hover', async () => {
-        // Fixture: row 1 holds value '9' in BOTH files (different columns:
-        // a's name column and b's label column) → hovering one highlights
-        // the other. Row 2's values ('X'/'Y') have no counterpart.
+        // Fixture: table row 'id' holds value '9' in BOTH files (a's entry 1
+        // and b's entry 2) → hovering one highlights the other. The 'Y'
+        // values sit in row 'name' and have no same-row counterpart when a
+        // '9' is hovered.
+        // Drop [b, a] → the drop auto-selects hovj-a.csv; clicking hovj-b.csv
+        // toggles it in → activeFileIds = [hovj-a, hovj-b]
         await dropAndSelect(
             [
-                new File(['id,name\n9,X\n2,Y'], 'hovj-a.csv', { type: 'text/csv' }),
                 new File(['key,label\n1,9\n2,Y'], 'hovj-b.csv', { type: 'text/csv' }),
+                new File(['id,name\n9,X\n2,Y'], 'hovj-a.csv', { type: 'text/csv' }),
             ],
             ['hovj-b.csv'],
         );
-        fireEvent.click(screen.getByTestId('csv-join-tab') ?? screen.getByTestId('content-tab-csvJoin'));
+        fireEvent.click(screen.getByTestId('content-tab-csvJoin'));
 
-        // Table layout (row-major): header strip, then rows. Row 1 = id/key
-        // ('9' / '1'), row 2 = name/label ('X' / '9'), row 3 = age/extra
-        // ('2' / 'Y'). Wait — the fixture's first column values differ per
-        // file; the left labels come from a.csv only.
         const table = screen.getByTestId('csv-join-table');
         const spansWithText = (text: string) =>
             Array.from(table.querySelectorAll('span')).filter(
                 (span) => span.textContent === text,
             );
-        // '9' appears as: row 1 a.csv cell, row 2 b.csv cell — plus the
-        // header strip does not contain it. Two value cells.
+        // '9' appears as: row 'id' a-entry-1 cell, row 'id' b-entry-2 cell.
+        // Two value cells.
         const nineCells = spansWithText('9');
         expect(nineCells).toHaveLength(2);
         const yCell = spansWithText('Y')[0];
@@ -183,8 +224,8 @@ describe('csvJoinPlugin', () => {
         expect(nineCells[1].style.background).toBe('');
         expect(yCell.style.background).toBe('');
 
-        // Hover the first '9' (a.csv row 1) → hovered tint on it, MATCHED
-        // tint on the second '9' (b.csv row 2). 'Y' stays unhighlighted.
+        // Hover the first '9' (a, row 'id') → hovered tint on it, MATCHED
+        // tint on the second '9' (b, row 'id'). 'Y' stays unhighlighted.
         fireEvent.mouseEnter(nineCells[0]);
         expect(nineCells[0].style.background).toBe('rgba(148, 163, 184, 0.25)');
         expect(nineCells[1].style.background).toBe('rgba(59, 130, 246, 0.25)');
@@ -195,7 +236,7 @@ describe('csvJoinPlugin', () => {
         expect(nineCells[0].style.background).toBe('');
         expect(nineCells[1].style.background).toBe('');
 
-        // Hover the second '9' (b.csv row 2) → mirrored behavior
+        // Hover the second '9' (b, row 'id') → mirrored behavior
         fireEvent.mouseEnter(nineCells[1]);
         expect(nineCells[1].style.background).toBe('rgba(148, 163, 184, 0.25)');
         expect(nineCells[0].style.background).toBe('rgba(59, 130, 246, 0.25)');

@@ -11,10 +11,11 @@ import { FileCsvJoinView } from './FileCsvJoinView';
 //
 // Unlike comparePlugin (exactly two files, order-dependent diff), this
 // viewer accepts ANY selection size — even a single file — as long as every
-// selected file is CSV. Layout (FileCsvJoinView): the FIRST file's headers
-// form the left column; every selected file contributes one value column on
-// the right, rows in file order. A shared header-row selector chooses which
-// raw CSV line is the header row in every file.
+// selected file is CSV. Layout (FileCsvJoinView): the FIRST file's selected
+// header row forms the left "Header" column (one table row per header
+// cell); every file's data ENTRIES then become columns grouped under that
+// file's head, left to right. EACH file's head carries its own header-row
+// input selecting which raw CSV line is that file's header row.
 //
 // Gate: every selected file must be CSV (text kind + .csv extension,
 // case-insensitive — same predicate as comparePlugin's isCsvFile). Any
@@ -36,8 +37,8 @@ const isJoinable = (context: DashboardSelectionContext): boolean =>
 // The selection-level renderer. Receives the selection snapshot from the
 // dashboard (dashboards/FormatterDashboard.tsx builds it from the shared
 // store) and joins every selected file in SELECTION order (activeFileIds
-// order — NOT sidebar order). The FIRST-selected file donates the header
-// column; the rest follow as value columns.
+// order — NOT sidebar order). The FIRST-selected file's selected header row
+// becomes the "Header" column; the rest follow with their entry columns.
 const CsvJoinSelectionView = ({ context }: { context: DashboardSelectionContext }) => {
     // Resolve the selected files in SELECTION order (activeFileIds order —
     // NOT sidebar order): the first-selected file owns the header column
