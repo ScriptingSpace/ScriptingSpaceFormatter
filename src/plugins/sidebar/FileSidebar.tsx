@@ -1,5 +1,9 @@
 import React from 'react';
 import { styledComponent, useStateHook } from '@presource/react';
+// Inline SVG close glyph from the workspace icon package — the per-entry
+// remove control (replaces the former × font glyph so the control never
+// depends on a font's multiplication-sign design)
+import { CloseIcon } from '@rightless/icons';
 import { formatterFileStore } from '../../functions';
 import type { FormatterFile } from '../../functions';
 
@@ -283,7 +287,8 @@ export const FileSidebar = ({ files, activeFileIds, onSelect, onDeselect, onClos
                                         }}
                                         data-testid={`remove-file-${entry.name}`}
                                     >
-                                        ×
+                                        {/* 12px box — matches the former font-size: 12 glyph */}
+                                        <CloseIcon size={12} />
                                     </EntryClose>
                                 </FileEntry>
                             </React.Fragment>

@@ -1,5 +1,9 @@
 import React from 'react';
 import { styledComponent, useStateHook, useToggleHook } from '@presource/react';
+// Inline SVG copy/check glyphs from the workspace icon package — the
+// clipboard button's two states (⎘ clipboard glyph → ✓ checkmark on success,
+// both as currentColor strokes instead of font-dependent characters)
+import { CopyIcon, CheckIcon } from '@rightless/icons';
 import { csvDiff } from './csvDiff';
 import type { CsvDiffResult } from './csvDiff';
 
@@ -502,8 +506,9 @@ export const FileCsvDiffView = ({
                             aria-label={copied() ? 'Copied' : 'Copy cell differences as CSV'}
                             title={copied() ? 'Copied' : 'Copy as CSV'}
                         >
-                            {/* Clipboard glyph (⎘) / checkmark (✓) on success */}
-                            {copied() ? '✓' : '⎘'}
+                            {/* Clipboard copy glyph → checkmark on success
+                                (inline SVG, aria-label on the button above) */}
+                            {copied() ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
                         </CopyIconButton>
                     </SectionHeader>
                     <DiffTable>

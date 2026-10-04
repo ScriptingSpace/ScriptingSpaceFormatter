@@ -42,6 +42,7 @@
         "@emotion/styled": "^11.14.1",
         "@presource/core": "^1.0.0",
         "@presource/react": "^1.0.0",
+        "@rightless/icons": "*",
         "pdf-lib": "^1.17.1",
         "pdfjs-dist": "4.10.38",
         "yaml": "^2.9.0"

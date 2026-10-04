@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { describe, it, expect, afterEach } from 'vitest';
 import { FormatterDashboard } from '../../dashboards/FormatterDashboard';
@@ -257,8 +257,10 @@ describe('differenceCsvPlugin — csv comparison', () => {
         expect(cellRows).toEqual(['2']);
 
         const cellSection = screen.getByTestId('csv-diff-cells');
+        // The copy control is an inline SVG glyph (no text contribution), so
+        // the section text starts at the title
         expect(cellSection.textContent).toBe(
-            'Cell differences⎘KeyMatchRowsColumnalpha.csvbeta.csv2' +
+            'Cell differencesKeyMatchRowsColumnalpha.csvbeta.csv2' +
                 '50%2 ↔ 3nameBobBobby',
         );
 
@@ -440,8 +442,9 @@ describe('differenceCsvPlugin — csv comparison', () => {
         // Match 33% (id matches, status + age differ of 3 columns). Flat
         // table → every column is filled on BOTH cell rows.
         const cellSection = screen.getByTestId('csv-diff-cells');
+        // The copy control is an inline SVG glyph (no text contribution)
         expect(cellSection.textContent).toBe(
-            'Cell differences⎘KeyMatchRowsColumnnorm-a.csvnorm-b.csv1' +
+            'Cell differencesKeyMatchRowsColumnnorm-a.csvnorm-b.csv1' +
                 '33%2 ↔ 2statusRetired Retired' +
                 '133%2 ↔ 2age12.0012',
         );
@@ -475,9 +478,9 @@ describe('differenceCsvPlugin — csv comparison', () => {
         fireEvent.click(screen.getByTestId('sidebar-file-copy-a.csv'));
         fireEvent.click(screen.getByTestId('content-tab-differenceCsv'));
 
-        // Copy ICON sits immediately after the section title — clipboard
-        // glyph ⎘, no text label
-        expect(screen.getByTestId('csv-diff-cells-copy').textContent).toBe('⎘');
+        // Copy ICON sits immediately after the section title — inline SVG
+        // clipboard glyph, no text label
+        expect(screen.getByTestId('csv-diff-cells-copy').querySelector('svg[data-icon="copy"]')).not.toBeNull();
 
         fireEvent.click(screen.getByTestId('csv-diff-cells-copy'));
 
@@ -498,7 +501,7 @@ describe('differenceCsvPlugin — csv comparison', () => {
         // Icon flips to the checkmark glyph after a successful copy (the
         // async clipboard promise resolves in a microtask — flush it first)
         await waitFor(() => {
-            expect(screen.getByTestId('csv-diff-cells-copy').textContent).toBe('✓');
+            expect(screen.getByTestId('csv-diff-cells-copy').querySelector('svg[data-icon="check"]')).not.toBeNull();
         });
     });
 
@@ -580,7 +583,7 @@ describe('differenceCsvPlugin — csv comparison', () => {
         // 0 (id AND name both differ) → no pairing, both rows stay missing
         // rows — so 'Zed'/'X' from couple 2 never appear in this table.
         expect(cellSection.textContent).toBe(
-            'Cell differences⎘KeyMatchRowsColumnhov-a.csvhov-b.csv1' +
+            'Cell differencesKeyMatchRowsColumnhov-a.csvhov-b.csv1' +
                 '50%2 ↔ 2nameXY',
         );
 
@@ -651,7 +654,7 @@ describe('differenceCsvPlugin — csv comparison', () => {
         // first file's row order: couple 1 = key '1' (X vs Y), couple 2 =
         // key '2' (X vs Zed).
         expect(cellSection.textContent).toBe(
-            'Cell differences⎘KeyMatchRowsColumnx-a.csvx-b.csv1' +
+            'Cell differencesKeyMatchRowsColumnx-a.csvx-b.csv1' +
                 '50%2 ↔ 2nameXY2' +
                 '50%3 ↔ 3nameXZed',
         );

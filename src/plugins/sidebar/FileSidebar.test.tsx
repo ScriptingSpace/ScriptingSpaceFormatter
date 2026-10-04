@@ -51,10 +51,15 @@ describe('FileSidebar', () => {
 
         // Header shows the file count
         expect(screen.getByText('Files (2)')).toBeDefined();
-        // One entry per file in drop order (matched by testid prefix — the ×
-        // close buttons are also role="button", so role queries would over-match)
+        // One entry per file in drop order (matched by testid prefix — the
+        // close buttons are also role="button", so role queries would
+        // over-match). The close control is an inline SVG glyph (no text), so
+        // each entry's textContent is the bare file name.
         const entries = screen.getAllByTestId(/^sidebar-file-/);
-        expect(entries.map((entry) => entry.textContent)).toEqual(['a.txt×', 'b.txt×']);
+        expect(entries.map((entry) => entry.textContent)).toEqual(['a.txt', 'b.txt']);
+        // The remove control renders the close glyph as an SVG icon
+        expect(screen.getByTestId('remove-file-a.txt').querySelector('svg[data-icon="close"]')).not.toBeNull();
+        expect(screen.getByTestId('remove-file-b.txt').querySelector('svg[data-icon="close"]')).not.toBeNull();
     });
 
     it('marks only the active entry as selected', () => {
