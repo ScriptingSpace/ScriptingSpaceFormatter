@@ -3,8 +3,8 @@ import { arrayEach, arrayEachAsync } from '@presource/core';
 import type { FormatterFile } from '../../functions';
 
 // ─── Page geometry (A4 portrait, points) ─────────────────────────────────────
-// Cross-reference: used by buildFilesPdf below; the export button lives in
-// the ExportPdfPlugin header slot (plugins/exportPdf/ExportPdfPlugin.tsx).
+// Cross-reference: used by buildFilesPdf below; the export row lives in the
+// ExportPdfPlugin's header-dropdown menu (plugins/exportPdf/ExportPdfPlugin.tsx).
 // ZERO margins by design — content renders edge to edge, no file-name title.
 const PAGE_WIDTH = 595.28;
 const PAGE_HEIGHT = 841.89;
@@ -199,16 +199,18 @@ const appendFile = async (doc: PDFDocument, file: FormatterFile, bodyFont: BodyF
 // Cached font handle type for appendFile — embedded once per document
 type BodyFont = Awaited<ReturnType<PDFDocument['embedFont']>>;
 
-// Builds a single PDF from the sidebar files, in drop order. Always resolves
-// to a document with at least one page (empty session → one note page), so
+// Builds a single PDF from the given files, in the order given (the plugin
+// passes the SELECTED sidebar files in selection order). Always resolves
+// to a document with at least one page (empty input → one note page), so
 // save()/download never produce a zero-page (invalid) PDF.
 export const buildFilesPdf = async (files: FormatterFile[]): Promise<PDFDocument> => {
     const doc = await PDFDocument.create();
     const bodyFont = await doc.embedFont(StandardFonts.Courier);
 
     if (files.length === 0) {
-        // Unreachable from the UI (button is disabled with 0 files) but kept
-        // as a safe default for direct callers
+        // Unreachable from the UI (the export row errors out with no
+        // selection instead of exporting) but kept as a safe default for
+        // direct callers
         const page = doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
         drawBodyLines(page, bodyFont, ['No files loaded.'], BODY_TOP, MUTED_COLOR);
         return doc;

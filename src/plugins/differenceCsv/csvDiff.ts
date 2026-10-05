@@ -13,13 +13,16 @@ import { arrayEach } from '@presource/core';
 // 3. ROW matching — EVERY row of the first file is scored against EVERY
 //    row of the second file over the common columns (name-matched):
 //    score = fraction of common columns with equal NON-EMPTY values.
-//    The full score matrix is then consumed GREEDILY in descending score:
-//    the best couple wins globally, both rows are omitted from further
-//    checking, and consumption continues down the sorted list. A 100%
-//    match is therefore always recognized first — no matter where the row
-//    sits in the second file — and both rows are removed from the pool
-//    before any weaker couple is considered. Ties break by the first
-//    file's row number, then the second's — fully deterministic.
+//    The matrix is then PRUNED to mutual best matches — each row keeps
+//    only its single highest-scoring partner, and a couple survives only
+//    when it is the best candidate for BOTH of its rows. The survivors
+//    are consumed GREEDILY in descending score: the best couple wins
+//    globally, both rows are omitted from further checking, and
+//    consumption continues down the sorted list. A 100% match is
+//    therefore always recognized first — no matter where the row sits in
+//    the second file — and both rows are removed from the pool before any
+//    weaker couple is considered. Ties break by the first file's row
+//    number, then the second's — fully deterministic.
 //    Score-0 couples never pair: two rows sharing no non-empty common
 //    value have no identity in common.
 //    Complexity: O(n·m·c) for n/m rows and c common columns — fine for

@@ -77,7 +77,7 @@ export type CsvJoinOptions = {
 };
 
 // Header-row index resolution — same contract as csvDiff.ts's
-// resolveHeaderIndex (cross-reference: src/plugins/differenceCsv/csvDiff.ts:223):
+// resolveHeaderIndex (cross-reference: src/plugins/differenceCsv/csvDiff.ts:226):
 // 1-based raw line number clamped to [1, rowCount]; invalid (non-finite /
 // < 1 / undefined) → default 1 (index 0). A value beyond the row count
 // clamps to the last row (header only, no data rows).

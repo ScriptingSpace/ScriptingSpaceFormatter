@@ -153,7 +153,7 @@ const HeaderMenuPanel = styledComponent('div', {
 // type only accepts React.CSSProperties keys — no nested selectors — so the
 // hover highlight is applied via the row's onMouseOver/onMouseOut handlers
 // driven by a `hovered` prop (cross-reference: presource/react
-// styled-component.tsx PrimaryInput type, line 79).
+// styled-component.tsx PrimaryInput type, line 82).
 const HeaderMenuRow = styledComponent<{ hovered: boolean }>('div', {
     display: 'flex',
     alignItems: 'center',
@@ -422,9 +422,10 @@ export type FormatterDashboardProps = {
 
 // Top-level executor: owns the multi-file session state and runs the plugin
 // sequence. It exposes three target areas to the plugins — header slot,
-// sidebar slot and the content area — plus two callback hooks: files dropped
-// on the page (onFilesDropped) and the multi-selection (renderFile renders
-// the FOCUSED — last selected — file). Each accepted file becomes one
+// sidebar slot and the content area — plus the callback hooks: files dropped
+// on the page (onFilesDropped), window pastes (onPaste), the content render
+// (renderFile renders the FOCUSED — last selected — file) and the
+// selection-level tabs (renderSelection). Each accepted file becomes one
 // sidebar entry; a re-drop of the same file name replaces that entry's
 // content. Sidebar entries are a MULTI-selection: clicking toggles a name
 // in/out; with several selected the content pane shows one option per file.

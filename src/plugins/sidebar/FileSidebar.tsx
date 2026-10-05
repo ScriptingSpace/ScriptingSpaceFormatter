@@ -152,9 +152,10 @@ export type FileSidebarProps = {
     onMove: (fromName: string, toIndex: number) => void;
 };
 
-// Sidebar listing every file accepted by the dashboard. Files enter ONLY by
-// dropping them onto the page (the dashboard's global drop handler reads them
-// via readTextFile → openFile). Clicking an entry TOGGLES it in/out of the
+// Sidebar listing every file accepted by the dashboard. Files enter by
+// dropping them onto the page or pasting them (the dashboard forwards both
+// to the file-reader plugin, which reads them via readTextFile → openFile).
+// Clicking an entry TOGGLES it in/out of the
 // multi-selection — the dashboard then renders the FOCUSED (last selected)
 // file's content in the pane to the sidebar's right.
 // Entries can also be dragged BETWEEN each other to re-order the list: the

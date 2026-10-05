@@ -8,9 +8,10 @@ import { parseCsv, csvDiff } from './csvDiff';
 //
 // Algorithm: EVERY first-file row is scored against EVERY second-file row
 // (fraction of common columns with equal non-empty values); the score
-// matrix is consumed greedily strongest-first — the best couple wins
-// globally, both rows are omitted from further checking. Score-0 couples
-// never pair. Unconsumed rows are the missing rows.
+// matrix is pruned to mutual best matches, then consumed greedily
+// strongest-first — the best couple wins globally, both rows are omitted
+// from further checking. Score-0 couples never pair. Unconsumed rows are
+// the missing rows.
 
 describe('parseCsv', () => {
     it('parses simple comma-separated rows', () => {

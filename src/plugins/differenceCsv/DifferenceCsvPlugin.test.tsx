@@ -7,7 +7,8 @@ import { diffLines } from './diffLines';
 
 // ─── DIFFERENCE CSV PLUGIN — integration tests through the real dashboard ───
 // The differenceCsv plugin hooks `renderSelection`, which the dashboard fires
-// only when TWO OR MORE sidebar files are selected. The tab mounts AFTER the
+// for ONE OR MORE selected sidebar files; the plugin self-gates to exactly
+// two resolvable files. The tab mounts AFTER the
 // focused file's plugin tabs (tab label "Difference").
 
 afterEach(() => {
@@ -53,7 +54,8 @@ describe('differenceCsvPlugin', () => {
             expect(screen.getByTestId('file-content-text')).toBeDefined();
         });
 
-        // Single selection → renderSelection never fires → no Difference tab
+        // Single selection → the plugin's two-file gate yields null → no
+        // Difference tab
         expect(screen.queryByTestId('content-tab-differenceCsv')).toBeNull();
         expect(screen.queryByTestId('file-difference')).toBeNull();
     });

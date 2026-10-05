@@ -103,11 +103,13 @@ export type DashboardPlugin = {
     // null / undefined to contribute nothing (then other plugins take over).
     // Pure render — no side effects, deterministic output for a given file.
     renderFile?: (file: FormatterFile) => React.ReactNode | null;
-    // Selection-level hook: called ONLY when TWO OR MORE sidebar files are
-    // selected. Return a React node to render as an extra content tab AFTER
-    // the focused file's plugin tabs (cross-reference: dashboards/
-    // FormatterDashboard.tsx — the file-options layout mounts selection
-    // tabs next to the plugin tabs inside the focused file's panel).
+    // Selection-level hook: called whenever sidebar files are selected (the
+    // dashboard fires it for ONE OR MORE files; plugins that need a larger
+    // selection self-gate — differenceCsv needs two or more, compareCsv
+    // accepts even one). Return a React node to render as an extra content
+    // tab AFTER the focused file's plugin tabs (cross-reference: dashboards/
+    // FormatterDashboard.tsx — selection tabs mount next to the plugin tabs
+    // inside the focused file's panel).
     // Returning null / undefined contributes nothing.
     renderSelection?: (context: DashboardSelectionContext) => React.ReactNode | null;
     // Drop hook: fired when files are dropped anywhere on the dashboard.

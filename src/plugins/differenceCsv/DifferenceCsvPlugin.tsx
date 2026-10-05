@@ -6,10 +6,11 @@ import { FileCsvDiffView } from './FileCsvDiffView';
 
 // ─── DIFFERENCE CSV PLUGIN ───────────────────────────────────────────────────
 // File difference. Hooks ONLY `renderSelection` — the selection-level hook
-// that fires when TWO OR MORE sidebar files are selected. The dashboard
-// renders the returned node as an extra content tab placed AFTER the focused
-// file's plugin tabs (tab label "Difference"). With fewer than two selected
-// files the hook never fires, so the tab simply does not exist.
+// the dashboard fires whenever one or more sidebar files are selected; the
+// plugin self-gates to exactly two resolvable files below (returning null
+// otherwise). The dashboard renders the returned node as an extra content
+// tab placed AFTER the focused file's plugin tabs (tab label "Difference").
+// With fewer than two selected files the gate yields no tab.
 //
 // Difference strategy per selection content:
 // - BOTH files are CSV (text kind + .csv extension) → order-independent CSV
@@ -130,9 +131,9 @@ const DiffLegendMarker = styledComponent<{ type: 'removed' | 'added' }>('span', 
 export const differenceCsvPlugin: DashboardPlugin = {
     id: 'differenceCsv',
     label: 'Difference',
-    // Selection-level hook only — the dashboard calls this when two or more
-    // files are selected and mounts the returned node as an extra tab after
-    // the focused file's plugin tabs
+    // Selection-level hook only — the dashboard calls this for ONE OR MORE
+    // selected files (the gate below needs two) and mounts the returned node
+    // as an extra tab after the focused file's plugin tabs
     renderSelection: (context) => {
         // Text-only selections produce a real diff; anything else (image /
         // video / pdf / binary in the selection) contributes no tab
