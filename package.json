@@ -3,12 +3,13 @@
     "version": "1.1.0",
     "description": "Scripting Space Formatter — plug-and-play dashboard that accepts dropped files into a sidebar; the left content pane is reserved for future formatting output",
     "type": "module",
-    "main": "lib/index.js",
-    "types": "lib/index.d.ts",
+    "main": "./src/index.ts",
+    "module": "./src/index.ts",
+    "types": "./src/index.ts",
     "exports": {
         ".": {
-            "types": "./lib/index.d.ts",
-            "import": "./lib/index.js"
+            "types": "./src/index.ts",
+            "default": "./src/index.ts"
         },
         "./app": "./bin/formatter.js"
     },
@@ -17,7 +18,17 @@
     },
     "files": [
         "bin",
-        "lib"
+        "src",
+        "!bin/scaffold.test.ts",
+        "!src/main.tsx",
+        "!src/app.css",
+        "!src/**/*.test.ts",
+        "!src/**/*.test.tsx",
+        "!src/**/*.spec.ts",
+        "!src/**/*.spec.tsx",
+        "!src/**/__snapshots__/**",
+        "!src/**/node_modules/**",
+        "dist"
     ],
     "sideEffects": false,
     "engines": {
@@ -26,8 +37,7 @@
     "scripts": {
         "dev": "vite",
         "build": "vite build",
-        "build:lib": "tsc -p tsconfig.build.json",
-        "prepublishOnly": "vitest run && tsc --noEmit && tsc -p tsconfig.build.json",
+        "prepublishOnly": "vitest run && tsc --noEmit && vite build",
         "preview": "vite preview",
         "start": "node bin/formatter.js",
         "test": "vitest run",

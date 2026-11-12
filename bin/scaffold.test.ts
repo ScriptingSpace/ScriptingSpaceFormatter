@@ -56,7 +56,7 @@ describe('createHostPackageJson', () => {
 describe('createIndexHtml', () => {
     it('emits the exact host HTML shell with inlined viewport-lock CSS', () => {
         // Mirrors src/app.css (html/body/#root lock + dark body theme) because
-        // app.css is app scaffolding and never ships in lib/
+        // app.css is app scaffolding and is excluded from the published tree
         expect(createIndexHtml()).toBe(`<!doctype html>
 <html lang="en">
     <head>
@@ -95,7 +95,7 @@ describe('createIndexHtml', () => {
 describe('createMainTsx', () => {
     it('emits the exact host entry importing the public barrel export', () => {
         // Import must come from '@scripting-space/formatter' (the published
-        // barrel → lib/index.js), not the internal dashboards path used by
+        // barrel → src/index.ts), not the internal dashboards path used by
         // the package's own src/main.tsx
         expect(createMainTsx()).toBe(`import React from 'react';
 import { createRoot } from 'react-dom/client';

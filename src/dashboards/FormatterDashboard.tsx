@@ -858,9 +858,9 @@ const DashboardShell = ({ plugins }: { plugins: DashboardPlugin[] }) => {
                         constant injected by vite.config.ts `define` (declared
                         ambient in src/vite-env.d.ts). It lives with the title
                         so users can see which release they are running right
-                        where the product is named. The lib build
-                        (tsconfig.build.json) never sees the constant since the
-                        footer lives in this app-only dashboard file. */}
+                        where the product is named. There is no lib build:
+                        this file ships in the published .ts sources, so any
+                        consumer bundling it supplies its own `define`. */}
                     <span>
                         Formatter Dashboard v{__APP_VERSION__}
                     </span>

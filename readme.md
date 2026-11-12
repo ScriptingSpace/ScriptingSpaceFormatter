@@ -42,16 +42,27 @@ yarn build      # vite build → dist/
 The package is publishable to npm as `@scripting-space/formatter`:
 
 ```bash
-yarn build:lib      # compile src/index.ts (the public barrel) → lib/ (JS + .d.ts)
-yarn publish        # prepublishOnly runs: vitest → tsc --noEmit → build:lib
+yarn publish        # prepublishOnly: vitest run → tsc --noEmit → vite build
 ```
 
+(`vite build` emits only the sanctioned app bundle in `dist/` — there is no
+library build: the published library **is** the TypeScript source.)
+
 - **Public API = `src/index.ts`.** Everything consumers can import comes from
-  that barrel (`lib/index.js` + `lib/index.d.ts` are built from it via
-  `tsconfig.build.json`, with app-only `src/main.tsx` and tests excluded).
-- `package.json` points `main` / `types` / `exports` at `lib/`, and `files`
-  ships only `lib/` — app scaffolding (index.html, main.tsx, configs) never
+  that barrel, and it is published **as TypeScript source** — no `tsc` library
+  build, no `lib/`, no `.mjs`/`.cjs`, no emitted `.d.ts` (the retired
+  `tsconfig.build.json` used to emit `lib/index.js` + `lib/index.d.ts`).
+- `package.json` points `main` / `module` / `types` and the `.` `exports`
+  condition at `./src/index.ts`; `files` ships the `src/` tree (tests, the app
+  entry `src/main.tsx` and its `src/app.css` excluded) plus `bin/` and the
+  sanctioned app build `dist/` — app scaffolding (index.html, configs) never
   reaches npm.
+- **The npm `bin` launcher stays plain JS** (root `AGENTS.md` exemption (b)3):
+  `bin/formatter.js` + `bin/scaffold.js` are shipped as-is, `exports["./app"]`
+  and `bin.formatter-dashboard` map to `bin/formatter.js`, and `yarn start`
+  runs it with bare `node`. The launcher scaffolds a throwaway Vite host that
+  imports the bare specifier `@scripting-space/formatter`, so Vite compiles the
+  published `src/index.ts` on the fly.
 - `sideEffects: false` + `exports` make the barrel tree-shakeable.
 - `react` / `react-dom` are `peerDependencies` — the library compiles against
   the consumer's React copy.
@@ -66,8 +77,11 @@ yarn add @scripting-space/formatter
 import { FormatterDashboard, FileSidebar } from '@scripting-space/formatter';
 ```
 
-Requires `react` / `react-dom` ≥ 18 in the consuming app (Vite / webpack /
-any bundler that resolves the ESM output).
+Requires `react` / `react-dom` ≥ 18 in the consuming app (Vite / webpack / any
+bundler that compiles TypeScript — the package ships `.ts`/`.tsx` sources, so
+TypeScript consumers need `moduleResolution: "bundler"`: the extensionless
+relative imports inside `src/` are rejected per specifier by `node16` /
+`nodenext` with TS2834).
 
 ## Structure
 

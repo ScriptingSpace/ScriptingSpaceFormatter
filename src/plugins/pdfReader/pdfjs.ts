@@ -10,7 +10,7 @@ export { getDocument, GlobalWorkerOptions };
 
 // Resolves the pdf.js worker source. The `?url` import is resolved at Vite
 // build time to a hashed asset URL (vite/client's ambient `*?url` module
-// declaration keeps `tsc --noEmit` and `tsconfig.build.json` happy).
+// declaration keeps `tsc --noEmit` happy — the published .ts sources need it).
 //
 // Lazy + guarded on purpose:
 // - called only when a PDF is actually opened (no worker fetch for apps that

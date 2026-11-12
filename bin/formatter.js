@@ -43,7 +43,7 @@ import {
 
 // ─── locate the downloaded package ───────────────────────────────────────────
 // This file ships inside the package at bin/formatter.js, so the package root
-// (with package.json / lib/) is always the directory above bin/. Works both
+// (with package.json / src/) is always the directory above bin/. Works both
 // under npx (npx cache install dir) and from a checkout (repo working dir).
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 

@@ -5,8 +5,8 @@
 // throwaway temp dir, then runs `npm install` + the Vite dev server there.
 // Cross-ref: src/main.tsx / index.html / vite.config.ts — the templates mirror
 // the package's own app scaffolding, but import `FormatterDashboard` from the
-// installed library barrel (src/index.ts → lib/index.js) instead of the
-// workspace src.
+// installed library barrel (`main`/`module`/`types`/`exports` all point at
+// src/index.ts, shipped as .ts source) instead of the workspace src.
 //
 // Kept 100% side-effect-free (string/object in → string/object out) so
 // bin/scaffold.test.ts can assert exact output without touching the fs.
@@ -40,8 +40,8 @@ export const createHostPackageJson = ({ packageSpec }) => ({
 
 // index.html — same shell as the package's own index.html, but the viewport
 // lock CSS (cross-ref src/app.css:11-28) is inlined as a <style> tag because
-// app.css is app scaffolding and is NOT part of the published lib/ export
-// (cross-ref package.json "files": ["lib"]).
+// app.css is app scaffolding and is excluded from the published surface
+// (cross-ref package.json "files": "src" + the "!src/app.css" negation).
 export const createIndexHtml = () => `<!doctype html>
 <html lang="en">
     <head>
